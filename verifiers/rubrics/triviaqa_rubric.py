@@ -12,12 +12,13 @@ class TrivialQAToolRubric(ToolRubric):
         self.env_parser = env_parser
         self.reward_funcs = [
             self.exist_answer_reward_func,
-            self.exist_answer_in_search_results,
+            #self.exist_answer_in_search_results,
             self.exact_match_reward_func,
-            self.tool_execution_reward_func,
+            #self.tool_execution_reward_func,
             self.parser.get_format_reward_func(),
             self.parser.get_xml_reward_func(),
         ]
+        
     
     def exist_answer_reward_func(self, completions, answer, **kwargs) -> List[float]:
         """Reward function that checks if the expected answer exists in the completions."""
