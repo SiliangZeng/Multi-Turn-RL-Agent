@@ -9,7 +9,7 @@ GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"200"}
 BETA=${8:-"0"}
-STEP_ADV_COE=${9:-"1"}  # Default step advantage coefficient is 0.5
+STEP_ADV_COE=${9:-"0"}  # Default step advantage coefficient is 0.5
 
 # Get the number of GPUs on the machine
 source activate verifier_env

@@ -58,9 +58,9 @@ step_reward_funcs = [
 
 # Outcome奖励函数: 其余所有奖励函数作为outcome reward
 outcome_reward_funcs = [
-    #rubric_class.tool_execution_reward_func,  # 工具执行是否成功
-    #rubric_class.exist_answer_in_search_results,  # 答案是否存在于搜索结果中
-    #rubric_class.exist_answer_reward_func,  # 答案是否存在于生成内容中
+    rubric_class.tool_execution_reward_func,  # 工具执行是否成功
+    rubric_class.exist_answer_in_search_results,  # 答案是否存在于搜索结果中
+    rubric_class.exist_answer_reward_func,  # 答案是否存在于生成内容中
     rubric_class.exact_match_reward_func,  # 答案是否精确匹配
     rubric_class.parser.get_format_reward_func(),  # XML格式是否正确
     rubric_class.parser.get_xml_reward_func(),  # XML标签是否完整
@@ -68,7 +68,7 @@ outcome_reward_funcs = [
 
 # 配置训练参数
 #run_name = f"sz-5-outcome-reward-step-coef-{args.step_advantage_coe}-ms-grpo-updated-wiki-search_{model_name.split('/')[-1].lower()}"
-run_name = f"sz-3-outcome-reward-2-step-reward-coef-{args.step_advantage_coe}-ms-grpo-updated-wiki-search_{model_name.split('/')[-1].lower()}"
+run_name = f"sz-6-outcome-reward-0-step-reward-coef-{args.step_advantage_coe}-ms-grpo-updated-wiki-search_{model_name.split('/')[-1].lower()}"
 training_args = vf.get_default_grpo_config(
     run_name=run_name,
     num_gpus=args.num_gpus
