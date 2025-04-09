@@ -63,8 +63,8 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         self.num_outcome_funcs = len(outcome_reward_funcs)
         
         # Set reward weights or use defaults (all ones)
-        self.step_reward_weights = torch.tensor(step_reward_weights) if step_reward_weights else torch.ones(self.num_step_funcs)
-        self.outcome_reward_weights = torch.tensor(outcome_reward_weights) if outcome_reward_weights else torch.ones(self.num_outcome_funcs)
+        self.step_reward_weights = torch.ones(self.num_step_funcs)
+        self.outcome_reward_weights = torch.ones(self.num_outcome_funcs)
         
         super().__init__(
             model=model,
@@ -106,7 +106,7 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
             prompt_completion_ids, attention_mask, logits_to_keep
         )
         
-        # Calculate step rewards and outcome rewards separately
+        # Calculate step rewards and outcome rewards separately 
         rewards_step = self._calculate_rewards(
             prompts, completion_messages, self.step_reward_funcs, inputs
         )
@@ -119,7 +119,7 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         step_rewards = (rewards_step * self.step_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
         outcome_rewards = (rewards_outcome * self.outcome_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
         
-        # Calculate total rewards (step + outcome)
+        # Calculate total rewards (step + outcome) 
         total_rewards = step_rewards + outcome_rewards
         
         # Compute normalized advantages
@@ -130,8 +130,8 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         result_positions = self._find_result_positions(completion_ids, completion_messages)
         
         # Apply the advantages based on result tag positions
-        # If there's a result tag, tokens before get total advantage, after get outcome
-        # If no result tag, all tokens get total advantage
+        # If there's a result tag, tokens before get total advantage, after get outcome 
+        # If no result tag, all tokens get total advantage 
         combined_advantages = self._combine_advantages(
             completion_mask, total_advantages, outcome_advantages, result_positions
         )
@@ -342,6 +342,8 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         For each trajectory:
         - If result_pos > 0: tokens before get total advantage, after get outcome advantage
         - If result_pos = -1: all tokens get total advantage
+        
+        Note: We don't multiply by completion_mask here as it will be applied in compute_loss
         """
         device = self.accelerator.device
         batch_size, seq_len = completion_mask.shape
@@ -358,16 +360,15 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
                 # Create mask for tokens before the result tag
                 before_result_mask = torch.zeros(seq_len, device=device)
                 before_result_mask[:result_pos] = 1.0
-                before_result_mask = before_result_mask * completion_mask[i]
                 
                 # After result mask is the complement of before_result_mask
-                after_result_mask = completion_mask[i] - before_result_mask
+                after_result_mask = 1.0 - before_result_mask
                 
                 # Apply total advantage before result, outcome advantage after
                 combined_advantages[i] = (total_advantage_expanded * before_result_mask) + (outcome_advantage_expanded * after_result_mask)
             else:
                 # No result tag found, use total advantage for entire sequence
-                combined_advantages[i] = total_advantage_expanded * completion_mask[i]
+                combined_advantages[i] = total_advantage_expanded
                 
         return combined_advantages
     
