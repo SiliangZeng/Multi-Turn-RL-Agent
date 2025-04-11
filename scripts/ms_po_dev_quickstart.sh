@@ -6,7 +6,7 @@ GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
-DISCOUNT_FACTOR=${9:-"0.5"}
+DISCOUNT_FACTOR=${9:-"0.9"}
 
 # Get the number of GPUs on the machine
 source activate verifier_env
