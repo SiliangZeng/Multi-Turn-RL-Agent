@@ -99,16 +99,102 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         # print one completion with full tensor
         #print('completion_messages[0]', completion_messages[0])
         #print('completion_ids[0]', completion_ids[0])
+        
+        # let's verify
+        # for one completion_mask, it should be like [1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0]
+        # in this case, we see that such completion mask has 4 segments
+        # let's check whether the number of messages in one completion_messages is equal to the number of segments - 1 in completion_mask
+        # for example, the completion_messages is like [..., {'role': 'user', 'content': '...'}, {'role': 'assistant', 'content': '...'}, {'role': 'user', 'content': '...'}, {'role': 'assistant', 'content': '...'}, ...],
+        
+        '''
         import torch
         torch.set_printoptions(threshold=float('inf'))  # 禁用省略
         
-
-        # print completion messages with full tensor
-        print('完整的completion_messages[0]:', completion_messages[0])
-        # print completion mask with full tensor
-        print('完整的completion_mask[0]:', completion_mask[0])
+        def verify_completion_mask_and_messages(completion_mask, completion_messages):
+            # Count segments in completion_mask
+            segments = 1  # Start with 1 for the first segment
+            segment_boundaries = [0]  # Record where segments change
+            
+            for i in range(1, len(completion_mask)):
+                if completion_mask[i] != completion_mask[i-1]:
+                    segments += 1
+                    segment_boundaries.append(i)
+            
+            # Add final boundary
+            segment_boundaries.append(len(completion_mask))
+            
+            # Count messages in completion_messages
+            message_count = len(completion_messages)
+            
+            # Extract segment values and lengths
+            segment_values = []
+            segment_lengths = []
+            
+            for i in range(len(segment_boundaries)-1):
+                start = segment_boundaries[i]
+                end = segment_boundaries[i+1]
+                value = completion_mask[start].item()
+                length = end - start
+                segment_values.append(value)
+                segment_lengths.append(length)
+            
+            # Prepare debug information
+            print("\n" + "="*80)
+            print(f"MASK ANALYSIS:")
+            print(f"Total mask length: {len(completion_mask)}")
+            print(f"Number of segments: {segments}")
+            print(f"Number of messages: {message_count}")
+            print(f"Messages roles: {[m.get('role', 'unknown') for m in completion_messages]}")
+            print(f"Segment boundaries: {segment_boundaries}")
+            print(f"Segment values: {segment_values}")
+            print(f"Segment lengths: {segment_lengths}")
+            
+            # Print mask pattern visualization
+            pattern = ''.join(str(x) for x in segment_values)
+            print(f"Mask pattern: {pattern}")
+            
+            # Print message-segment alignment
+            print("\nMessage to Segment Alignment:")
+            print("Expected alignment: Each message corresponds to a boundary between segments")
+            
+            # 修改验证条件，允许两种情况：消息数 = 段数-1 或 消息数 = 段数
+            condition1 = message_count == segments - 1
+            condition2 = message_count == segments
+            
+            print(f"Case 1: messages count ({message_count}) == segments count - 1 ({segments - 1}): {condition1}")
+            print(f"Case 2: messages count ({message_count}) == segments count ({segments}): {condition2}")
+            
+            # Print message contents briefly
+            print("\nFirst 50 chars of each message:")
+            for i, msg in enumerate(completion_messages):
+                content = msg.get('content', '')
+                print(f"  Message {i} ({msg.get('role', 'unknown')}): {content[:50]}...")
+            
+            # Print the first few and last few tokens of completion_mask
+            print("\nMask samples:")
+            print(f"First 20: {completion_mask[:20].tolist()}")
+            print(f"Last 20: {completion_mask[-20:].tolist()}")
+            
+            # 验证条件更新：messages数量等于segments数量减1或messages数量等于segments数量
+            if not (condition1 or condition2):
+                print(f"\nVERIFICATION FAILED: Number of messages ({message_count}) does not match either")
+                print(f"segments - 1 ({segments - 1}) or segments ({segments})")
+                # Continue execution (return True) instead of raising error
+                return True
+            
+            print("\nVERIFICATION PASSED!")
+            return True
         
+        # Apply verification to each item in batch
+        for i in range(len(completion_mask)):
+            verify_completion_mask_and_messages(completion_mask[i], completion_messages[i])
+            # Only check the first item
+            if i == 0:
+                break
+        
+        # Continue execution instead of quitting
         quit()
+        '''
         
         # Prepare model inputs
         prompt_completion_ids, attention_mask, logits_to_keep = self._prepare_model_inputs(
@@ -140,14 +226,14 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         total_advantages = self._compute_normalized_advantages(total_rewards, len(prompts))
         outcome_advantages = self._compute_normalized_advantages(outcome_rewards, len(prompts))
         
-        # Find the positions of result tags in each completion
-        result_positions = self._find_result_positions(completion_ids, completion_messages)
+        # Find the segment indices that contain '<result>' tags in each completion
+        result_segment_indices = self._find_result_positions(completion_ids, completion_messages)
         
-        # Apply the advantages based on result tag positions
+        # Apply the advantages based on result segment indices
         # If there's a result tag, tokens before get total advantage, after get outcome 
         # If no result tag, all tokens get total advantage 
         combined_advantages = self._combine_advantages(
-            completion_mask, total_advantages, outcome_advantages, result_positions
+            completion_mask, total_advantages, outcome_advantages, result_segment_indices
         )
         
         # Log metrics
@@ -300,62 +386,48 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
     
     def _find_result_positions(self, completion_ids, completion_messages):
         """
-        Find the position of '<result>' tags in completions.
+        Find the segment index that contains '<result>' tags in completions.
         
-        If a '<result>' tag is found in the environment response, return the position
-        of that tag in the completion. This position will be used to split the trajectory
-        into two actions:
-        - Tokens before the result tag will use total advantage
-        - Tokens after the result tag will use outcome advantage
-        
-        If no result tag is found, return -1, indicating that the entire trajectory
-        should use total advantage.
+        Instead of returning token positions, now returns segment indices.
+        - If a user message contains '<result>', return the index of that user message
+        - If no result tag is found, return -1
         """
-        device = self.accelerator.device
-        result_positions = []
+        result_segment_indices = []
         
-        for i, completion in enumerate(completion_messages):
-            ids = completion_ids[i]
-            result_pos = -1
+        for i, messages in enumerate(completion_messages):
+            result_segment = -1
             
             # Handle dialogue history format
-            if isinstance(completion, list):
+            if isinstance(messages, list):
                 # Look for assistant message followed by user message (env response)
-                for j, msg in enumerate(completion):
+                for j, msg in enumerate(messages):
                     if msg.get('role') == 'assistant':
-                        # Check if there's a subsequent environment response
-                        if j + 1 < len(completion) and completion[j + 1].get('role') == 'user':
-                            user_msg = completion[j + 1].get('content', '')
+                        # Check if there's a subsequent environment response (user message)
+                        if j + 1 < len(messages) and messages[j + 1].get('role') == 'user':
+                            user_msg = messages[j + 1].get('content', '')
                             
-                            # Check if environment response contains a <result> tag
+                            # Check if user message contains a '<result>' tag
                             if '<result>' in user_msg:
-                                # Calculate token position of environment response start
-                                token_pos = 0
-                                # Calculate token length of all prior messages
-                                for k in range(j + 1):
-                                    token_pos += len(self.processing_class.encode(
-                                        str(completion[k].get('content', ''))))
-                                
-                                # Set split point to the beginning of environment response
-                                result_pos = min(token_pos, len(ids) - 1)
+                                # Store the segment index of this user message
+                                result_segment = j + 1
                                 break
             
             # Handle string format (kept for compatibility)
-            elif isinstance(completion, str):
+            elif isinstance(messages, str):
                 # Raise error for unsupported format
                 raise ValueError("Completion is a string, which is not supported.")
             
-            result_positions.append(result_pos)
+            result_segment_indices.append(result_segment)
             
-        return result_positions
+        return result_segment_indices
     
-    def _combine_advantages(self, completion_mask, total_advantages, outcome_advantages, result_positions):
+    def _combine_advantages(self, completion_mask, total_advantages, outcome_advantages, result_segment_indices):
         """
-        Combine total and outcome advantages based on result positions.
+        Combine total and outcome advantages based on result segment indices.
         
         For each trajectory:
-        - If result_pos > 0: tokens before get total advantage, after get outcome advantage
-        - If result_pos = -1: all tokens get total advantage
+        - If result_segment > 0: all segments before result_segment get total advantage, after get outcome advantage
+        - If result_segment = -1: all segments get total advantage
         
         Note: We don't multiply by completion_mask here as it will be applied in compute_loss
         """
@@ -364,24 +436,45 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         combined_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
         
         for i in range(batch_size):
-            result_pos = result_positions[i]
+            result_segment = result_segment_indices[i]
             
             # Expand scalar advantages to sequence length
             total_advantage_expanded = total_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
             outcome_advantage_expanded = outcome_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
             
-            if result_pos > 0:
-                # Create mask for tokens before the result tag
-                before_result_mask = torch.zeros(seq_len, device=device)
-                before_result_mask[:result_pos] = 1.0
+            if result_segment > 0:
+                # 查找所有段落的边界
+                segment_boundaries = [0]  # 第一个段落的起始位置
+                current_segment = 0
                 
-                # After result mask is the complement of before_result_mask
-                after_result_mask = 1.0 - before_result_mask
+                # 遍历mask找出所有段落边界
+                for j in range(1, seq_len):
+                    if completion_mask[i][j] != completion_mask[i][j-1]:
+                        current_segment += 1
+                        segment_boundaries.append(j)
+                        
+                # 添加序列结束位置作为最后一个边界
+                segment_boundaries.append(seq_len)
                 
-                # Apply total advantage before result, outcome advantage after
-                combined_advantages[i] = (total_advantage_expanded * before_result_mask) + (outcome_advantage_expanded * after_result_mask)
+                # 如果找到了足够多的段落边界
+                if result_segment < len(segment_boundaries):
+                    # 获取result_segment对应的起始位置
+                    split_point = segment_boundaries[result_segment]
+                    
+                    # 创建分割掩码
+                    before_result_mask = torch.zeros(seq_len, device=device)
+                    before_result_mask[:split_point] = 1.0
+                    
+                    # 后面部分的掩码是补集
+                    after_result_mask = 1.0 - before_result_mask
+                    
+                    combined_advantages[i] = (total_advantage_expanded * before_result_mask) + (outcome_advantage_expanded * after_result_mask)
+                else:
+                    # we can raise an error here
+                    raise ValueError(f"No enough segments found in completion {i}")
+
             else:
-                # No result tag found, use total advantage for entire sequence
+                # 没有result标签，所有token都使用total_advantage
                 combined_advantages[i] = total_advantage_expanded
                 
         return combined_advantages
@@ -457,7 +550,7 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
         input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
-        logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
+        logits_to_keep = completion_ids.size(1)
 
         per_token_logps = self._get_per_token_logps(model, input_ids, attention_mask, logits_to_keep)
 
