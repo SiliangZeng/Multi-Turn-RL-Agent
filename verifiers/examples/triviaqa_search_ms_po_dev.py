@@ -27,6 +27,8 @@ parser.add_argument('--max_steps', type=int, default=200,
                     help='Maximum number of training steps (default: 200)')
 parser.add_argument('--beta', type=float, default=0.01,
                     help='Beta parameter for KL divergence (default: 0.01)')
+parser.add_argument('--discount_factor', type=float, default=1.0,
+                    help='Discount factor for outcome rewards (default: 1.0)')
 args = parser.parse_args()
 
 # 加载模型和tokenizer
@@ -86,6 +88,7 @@ print(f"  Grad accumulation steps: {training_args.gradient_accumulation_steps}")
 print(f"  Num iterations: {training_args.num_iterations}")
 print(f"  Max steps: {training_args.max_steps}")
 print(f"  Beta: {training_args.beta}")
+print(f"  Discount factor: {args.discount_factor}")
 
 # 使用MSGRPOEnvTrainer进行训练
 trainer = MSPOEnvTrainer_Dev(
@@ -94,6 +97,7 @@ trainer = MSPOEnvTrainer_Dev(
     env=vf_env,
     step_reward_funcs=step_reward_funcs,
     outcome_reward_funcs=outcome_reward_funcs,
+    discount_factor=args.discount_factor,
     args=training_args,
     train_dataset=train_dataset
 )

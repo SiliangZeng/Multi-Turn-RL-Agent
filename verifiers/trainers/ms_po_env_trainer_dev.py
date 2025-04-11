@@ -38,6 +38,7 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
             outcome_reward_funcs: Union[RewardFunc, List[RewardFunc]],
             step_reward_weights: Optional[List[float]] = None,
             outcome_reward_weights: Optional[List[float]] = None,
+            discount_factor: float = 1.0,
             args: Optional[GRPOConfig] = None,
             train_dataset: Optional[Union[Dataset, IterableDataset]] = None,
             eval_dataset: Optional[Union[Dataset, IterableDataset]] = None,
@@ -56,6 +57,7 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         # Create combined reward funcs for parent class
         self.step_reward_funcs = step_reward_funcs
         self.outcome_reward_funcs = outcome_reward_funcs
+        self.discount_factor = discount_factor
         combined_reward_funcs = step_reward_funcs + outcome_reward_funcs
         
         # Set up reward weights
@@ -220,7 +222,7 @@ class MSPOEnvTrainer_Dev(GRPOEnvTrainer):
         outcome_rewards = (rewards_outcome * self.outcome_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
         
         # Calculate total rewards (step + outcome) 
-        total_rewards = step_rewards + outcome_rewards
+        total_rewards = step_rewards + self.discount_factor * outcome_rewards
         
         # Compute normalized advantages
         total_advantages = self._compute_normalized_advantages(total_rewards, len(prompts))
