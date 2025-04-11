@@ -4,8 +4,9 @@ MODEL_NAME=${1:-"Qwen/Qwen2.5-7B"}
 LEARNING_RATE=${2:-"1e-6"}
 GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
-MAX_STEPS=${7:-"200"}
+MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
+DISCOUNT_FACTOR=${9:-"0.5"}
 
 # Get the number of GPUs on the machine
 source activate verifier_env
@@ -29,6 +30,8 @@ fi
 
 echo "Using ${NUM_GPUS_MINUS_1} GPUs for MS-GRPO training with model ${MODEL_NAME}"
 
+echo "discount factor: ${DISCOUNT_FACTOR}"
+
 # Launch the multi-step GRPO training
 accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MINUS_1} \
   verifiers/examples/triviaqa_search_ms_po_dev.py \
@@ -41,3 +44,4 @@ accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MI
   --num_iterations ${NUM_ITERATIONS} \
   --max_steps ${MAX_STEPS} \
   --beta ${BETA} \
+  --discount_factor ${DISCOUNT_FACTOR} \
