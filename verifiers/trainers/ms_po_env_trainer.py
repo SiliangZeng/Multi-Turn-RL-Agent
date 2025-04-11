@@ -126,14 +126,14 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         total_advantages = self._compute_normalized_advantages(total_rewards, len(prompts))
         outcome_advantages = self._compute_normalized_advantages(outcome_rewards, len(prompts))
         
-        # Find the positions of result tags in each completion
-        result_positions = self._find_result_positions(completion_ids, completion_messages)
+        # Find the segment index that contains '<r>' tags in completions
+        result_segment_indices = self._find_result_positions(completion_ids, completion_messages)
         
-        # Apply the advantages based on result tag positions
-        # If there's a result tag, tokens before get total advantage, after get outcome 
-        # If no result tag, all tokens get total advantage 
+        # Apply the advantages based on result segment indices
+        # If there's a result tag, all segments before result_segment get total advantage, after get outcome 
+        # If no result tag, all segments get total advantage
         combined_advantages = self._combine_advantages(
-            completion_mask, total_advantages, outcome_advantages, result_positions
+            completion_mask, total_advantages, outcome_advantages, result_segment_indices
         )
         
         # Log metrics
@@ -286,62 +286,48 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
     
     def _find_result_positions(self, completion_ids, completion_messages):
         """
-        Find the position of '<result>' tags in completions.
+        Find the segment index that contains '<r>' tags in completions.
         
-        If a '<result>' tag is found in the environment response, return the position
-        of that tag in the completion. This position will be used to split the trajectory
-        into two actions:
-        - Tokens before the result tag will use total advantage
-        - Tokens after the result tag will use outcome advantage
-        
-        If no result tag is found, return -1, indicating that the entire trajectory
-        should use total advantage.
+        Instead of returning token positions, now returns segment indices.
+        - If a user message contains '<r>', return the index of that user message
+        - If no result tag is found, return -1
         """
-        device = self.accelerator.device
-        result_positions = []
+        result_segment_indices = []
         
-        for i, completion in enumerate(completion_messages):
-            ids = completion_ids[i]
-            result_pos = -1
+        for i, messages in enumerate(completion_messages):
+            result_segment = -1
             
             # Handle dialogue history format
-            if isinstance(completion, list):
+            if isinstance(messages, list):
                 # Look for assistant message followed by user message (env response)
-                for j, msg in enumerate(completion):
+                for j, msg in enumerate(messages):
                     if msg.get('role') == 'assistant':
-                        # Check if there's a subsequent environment response
-                        if j + 1 < len(completion) and completion[j + 1].get('role') == 'user':
-                            user_msg = completion[j + 1].get('content', '')
+                        # Check if there's a subsequent environment response (user message)
+                        if j + 1 < len(messages) and messages[j + 1].get('role') == 'user':
+                            user_msg = messages[j + 1].get('content', '')
                             
-                            # Check if environment response contains a <result> tag
-                            if '<result>' in user_msg:
-                                # Calculate token position of environment response start
-                                token_pos = 0
-                                # Calculate token length of all prior messages
-                                for k in range(j + 1):
-                                    token_pos += len(self.processing_class.encode(
-                                        str(completion[k].get('content', ''))))
-                                
-                                # Set split point to the beginning of environment response
-                                result_pos = min(token_pos, len(ids) - 1)
+                            # Check if user message contains a '<r>' tag
+                            if '<r>' in user_msg:
+                                # Store the segment index of this user message
+                                result_segment = j + 1
                                 break
             
             # Handle string format (kept for compatibility)
-            elif isinstance(completion, str):
+            elif isinstance(messages, str):
                 # Raise error for unsupported format
                 raise ValueError("Completion is a string, which is not supported.")
             
-            result_positions.append(result_pos)
+            result_segment_indices.append(result_segment)
             
-        return result_positions
+        return result_segment_indices
     
-    def _combine_advantages(self, completion_mask, total_advantages, outcome_advantages, result_positions):
+    def _combine_advantages(self, completion_mask, total_advantages, outcome_advantages, result_segment_indices):
         """
-        Combine total and outcome advantages based on result positions.
+        Combine total and outcome advantages based on result segment indices.
         
         For each trajectory:
-        - If result_pos > 0: tokens before get total advantage, after get outcome advantage
-        - If result_pos = -1: all tokens get total advantage
+        - If result_segment > 0: all segments before result_segment get total advantage, after get outcome advantage
+        - If result_segment = -1: all segments get total advantage
         
         Note: We don't multiply by completion_mask here as it will be applied in compute_loss
         """
@@ -350,24 +336,45 @@ class MSPOEnvTrainer(GRPOEnvTrainer):
         combined_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
         
         for i in range(batch_size):
-            result_pos = result_positions[i]
+            result_segment = result_segment_indices[i]
             
             # Expand scalar advantages to sequence length
             total_advantage_expanded = total_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
             outcome_advantage_expanded = outcome_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
             
-            if result_pos > 0:
-                # Create mask for tokens before the result tag
-                before_result_mask = torch.zeros(seq_len, device=device)
-                before_result_mask[:result_pos] = 1.0
+            if result_segment > 0:
+                # 查找所有段落的边界
+                segment_boundaries = [0]  # 第一个段落的起始位置
+                current_segment = 0
                 
-                # After result mask is the complement of before_result_mask
-                after_result_mask = 1.0 - before_result_mask
+                # 遍历mask找出所有段落边界
+                for j in range(1, seq_len):
+                    if completion_mask[i][j] != completion_mask[i][j-1]:
+                        current_segment += 1
+                        segment_boundaries.append(j)
+                        
+                # 添加序列结束位置作为最后一个边界
+                segment_boundaries.append(seq_len)
                 
-                # Apply total advantage before result, outcome advantage after
-                combined_advantages[i] = (total_advantage_expanded * before_result_mask) + (outcome_advantage_expanded * after_result_mask)
+                # 如果找到了足够多的段落边界
+                if result_segment < len(segment_boundaries):
+                    # 获取result_segment对应的起始位置
+                    split_point = segment_boundaries[result_segment]
+                    
+                    # 创建分割掩码
+                    before_result_mask = torch.zeros(seq_len, device=device)
+                    before_result_mask[:split_point] = 1.0
+                    
+                    # 后面部分的掩码是补集
+                    after_result_mask = 1.0 - before_result_mask
+                    
+                    # 应用对应的优势
+                    combined_advantages[i] = (total_advantage_expanded * before_result_mask) + (outcome_advantage_expanded * after_result_mask)
+                else:
+                    # 我们可以在这里报错
+                    raise ValueError(f"No enough segments found in completion {i}")
             else:
-                # No result tag found, use total advantage for entire sequence
+                # 没有result标签，所有token都使用total_advantage
                 combined_advantages[i] = total_advantage_expanded
                 
         return combined_advantages

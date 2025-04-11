@@ -180,14 +180,15 @@ class MSGRPOEnvTrainer(GRPOEnvTrainer):
         step_advantages = self._compute_normalized_advantages(step_rewards, len(prompts))
         outcome_advantages = self._compute_normalized_advantages(outcome_rewards, len(prompts))
         
-        # Find the positions of <r> tags in each completion
-        result_positions = self._find_result_positions(completion_ids, completion_messages)
+        # Find the segment index that contains '<result>' tags in completions
+        result_segment_indices = self._find_result_positions(completion_ids, completion_messages)
         
-        # Apply the combined advantages based on <r> tag positions
-        # If there's a <r>, tokens before get step+outcome advantage, after get only outcome
-        # If no <r>, all tokens get only outcome advantage
+        # Apply the combined advantages based on result segment indices
+        # For each trajectory:
+        # - If result_segment > 0: all segments before result_segment get step+outcome, after get only outcome
+        # - If result_segment = -1: all tokens get only outcome advantage
         combined_advantages = self._combine_advantages(
-            completion_mask, step_advantages, outcome_advantages, result_positions
+            completion_mask, step_advantages, outcome_advantages, result_segment_indices
         )
         
         # Log metrics
@@ -340,57 +341,48 @@ class MSGRPOEnvTrainer(GRPOEnvTrainer):
     
     def _find_result_positions(self, completion_ids, completion_messages):
         """
-        在环境响应中查找<result>标签并确定分割点。
+        Find the segment index that contains '<result>' tags in completions.
         
-        如果环境响应中包含<result>标签，则返回该环境响应的开始位置，
-        这样该位置之前的所有token都会获得step_advantage + outcome_advantage，
-        之后的token只获得outcome_advantage。
-        
-        如果没有找到结果标签，则返回-1，表示整个序列只使用outcome_advantage。
+        Instead of returning token positions, now returns segment indices.
+        - If a user message contains '<result>', return the index of that user message
+        - If no result tag is found, return -1
         """
-        device = self.accelerator.device
-        result_positions = []
+        result_segment_indices = []
         
-        for i, completion in enumerate(completion_messages):
-            ids = completion_ids[i]
-            result_pos = -1
+        for i, messages in enumerate(completion_messages):
+            result_segment = -1
             
-            # 处理对话历史形式的完成内容
-            if isinstance(completion, list):
-                # 寻找assistant消息后跟着user消息(env response)的模式
-                for j, msg in enumerate(completion):
+            # Handle dialogue history format
+            if isinstance(messages, list):
+                # Look for assistant message followed by user message (env response)
+                for j, msg in enumerate(messages):
                     if msg.get('role') == 'assistant':
-                        # 检查是否有后续的环境响应
-                        if j + 1 < len(completion) and completion[j + 1].get('role') == 'user':
-                            user_msg = completion[j + 1].get('content', '')
+                        # Check if there's a subsequent environment response (user message)
+                        if j + 1 < len(messages) and messages[j + 1].get('role') == 'user':
+                            user_msg = messages[j + 1].get('content', '')
                             
-                            # 检查环境响应中是否包含<result>标签
+                            # Check if user message contains a '<result>' tag
                             if '<result>' in user_msg:
-                                # 计算环境响应开始的token位置
-                                token_pos = 0
-                                # 计算所有之前消息的token长度
-                                for k in range(j + 1):
-                                    token_pos += len(self.processing_class.encode(
-                                        str(completion[k].get('content', ''))))
-                                
-                                # 将分割点设为环境响应的开始位置
-                                result_pos = min(token_pos, len(ids) - 1)
+                                # Store the segment index of this user message
+                                result_segment = j + 1
                                 break
             
-            # 处理单个字符串形式的完成内容（兼容性保留）
-            elif isinstance(completion, str):
-                # raise error
+            # Handle string format (kept for compatibility)
+            elif isinstance(messages, str):
+                # Raise error for unsupported format
                 raise ValueError("Completion is a string, which is not supported.")
             
-            result_positions.append(result_pos)
+            result_segment_indices.append(result_segment)
             
-        return result_positions
+        return result_segment_indices
     
-    def _combine_advantages(self, completion_mask, step_advantages, outcome_advantages, result_positions):
+    def _combine_advantages(self, completion_mask, step_advantages, outcome_advantages, result_segment_indices):
         """
-        Combine step and outcome advantages based on result positions.
-        - If result_pos > 0: tokens before get step+outcome, after get only outcome
-        - If result_pos = -1: all tokens get only outcome advantage
+        Combine step and outcome advantages based on result segment indices.
+        
+        For each trajectory:
+        - If result_segment > 0: all segments before result_segment get step+outcome, after get only outcome
+        - If result_segment = -1: all tokens get only outcome advantage
         
         The step_advantage_coe parameter controls the weight of step advantage.
         """
@@ -399,24 +391,43 @@ class MSGRPOEnvTrainer(GRPOEnvTrainer):
         combined_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
         
         for i in range(batch_size):
-            result_pos = result_positions[i]
-            if result_pos > 0:
-                # Create a mask for tokens before the result tag
-                before_result_mask = torch.zeros(seq_len, device=device)
-                before_result_mask[:result_pos] = 1.0
-                before_result_mask = before_result_mask * completion_mask[i]
+            result_segment = result_segment_indices[i]
+            
+            # Expand scalar advantages to sequence length
+            outcome_advantage_expanded = outcome_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
+            step_advantage_expanded = step_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
+            
+            if result_segment > 0:
+                # 查找所有段落的边界
+                segment_boundaries = [0]  # 第一个段落的起始位置
+                current_segment = 0
                 
-                # Apply combined advantage before result, outcome advantage after
-                # Use step_advantage_coe to control the weight of step advantage
-                # 将标量扩展到序列长度
-                outcome_advantage_expanded = outcome_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
-                step_advantage_expanded = step_advantages[i].item() * torch.ones_like(before_result_mask, dtype=torch.float32)
+                # 遍历mask找出所有段落边界
+                for j in range(1, seq_len):
+                    if completion_mask[i][j] != completion_mask[i][j-1]:
+                        current_segment += 1
+                        segment_boundaries.append(j)
+                        
+                # 添加序列结束位置作为最后一个边界
+                segment_boundaries.append(seq_len)
                 
-                combined_advantages[i] = outcome_advantage_expanded + self.step_advantage_coe * step_advantage_expanded * before_result_mask
+                # 如果找到了足够多的段落边界
+                if result_segment < len(segment_boundaries):
+                    # 获取result_segment对应的起始位置
+                    split_point = segment_boundaries[result_segment]
+                    
+                    # 创建分割掩码
+                    before_result_mask = torch.zeros(seq_len, device=device)
+                    before_result_mask[:split_point] = 1.0
+                    before_result_mask = before_result_mask * completion_mask[i]
+                    
+                    # 应用对应的优势：前面使用step+outcome，后面只用outcome
+                    combined_advantages[i] = outcome_advantage_expanded + self.step_advantage_coe * step_advantage_expanded * before_result_mask
+                else:
+                    # 如果没找到对应的段落边界，报错
+                    raise ValueError(f"No enough segments found in completion {i}")
             else:
-                # No result tag found, use only outcome advantage
-                # 将标量扩展到序列长度
-                outcome_advantage_expanded = outcome_advantages[i].item() * torch.ones_like(completion_mask[i], dtype=torch.float32)
+                # 没有result标签，所有token都只使用outcome_advantage
                 combined_advantages[i] = outcome_advantage_expanded
                 
         return combined_advantages
