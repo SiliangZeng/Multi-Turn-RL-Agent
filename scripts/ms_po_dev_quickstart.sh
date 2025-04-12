@@ -2,7 +2,6 @@
 
 MODEL_NAME=${1:-"Qwen/Qwen2.5-7B"}
 LEARNING_RATE=${2:-"1e-6"}
-GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
@@ -18,13 +17,17 @@ echo "Detected ${NUM_GPUS} GPUs on the machine"
 # Set hyperparameters based on GPU count
 if [ ${NUM_GPUS} -eq 8 ]; then
     # Hyperparameters for 8 GPUs
+    # 12 * 7 / 21 = 4 prompt per step
     NUM_GENERATIONS=${3:-"21"}
     BATCH_SIZE=${4:-"12"}
+    GRAD_ACCUM_STEPS=${5:-"4"}
     echo "Using 8 GPU configuration with NUM_GENERATIONS=${NUM_GENERATIONS}, BATCH_SIZE=${BATCH_SIZE}"
 elif [ ${NUM_GPUS} -eq 4 ]; then
     # Hyperparameters for 4 GPUs
+    # 14 * 3 / 21 = 2 prompt per step, so we need to double the gradient accumulation steps
     NUM_GENERATIONS=${3:-"21"}
     BATCH_SIZE=${4:-"14"}
+    GRAD_ACCUM_STEPS=${5:-"8"}
     echo "Using 4 GPU configuration with NUM_GENERATIONS=${NUM_GENERATIONS}, BATCH_SIZE=${BATCH_SIZE}"
 fi
 
