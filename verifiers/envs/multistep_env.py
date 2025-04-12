@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import random
 import time
@@ -67,7 +66,7 @@ class MultiStepEnv(Environment):
             # sleep for 0-1 seconds to avoid rate limiting
             time.sleep(self.sleep_time * random.random())
 
-            state = deepcopy(states[j])
+            state = states[j].copy()
             if len(state["prompt_ids"]) == 0:
                 state["prompt_ids"] = llm_response.prompt_token_ids
             state["messages"].append({"role": "assistant", "content": llm_response.outputs[0].text})
@@ -86,36 +85,18 @@ class MultiStepEnv(Environment):
             state["completion_ids"].extend(list(llm_response.outputs[0].token_ids))
             state["completion_ids"] = state["completion_ids"][len(state["prompt_ids"]):]
 
-            # 198 -> \n, 151645 -> "<|im_end|>"
-            if len(state["completion_ids"]) < 2:
-                if state["completion_ids"][-1] != 198 and state["completion_ids"][-2] != 151645:
-                    state["completion_ids"].append(151645)
-                    state["completion_ids"].append(198)
-                    state["completion_mask"].append(1)
-                    state["completion_mask"].append(1)
-
-            if len(state["completion_ids"]) > len(state["completion_mask"]): # type: ignore
-                state["completion_mask"].extend([1] * (len(state["completion_ids"]) - len(state["completion_mask"]))) # type: ignore
-            if len(state["completion_mask"]) > len(state["completion_ids"]): # type: ignore
-                state["completion_mask"] = state["completion_mask"][:len(state["completion_ids"])] # type: ignore
-
-            if self.is_completed(state["messages"]) or len(state["completion_ids"]) > sampling_params.max_tokens - 1: # type: ignore
+            if self.is_completed(state["messages"]) or len(state["completion_ids"]) > sampling_params.max_tokens: # type: ignore
                 state["completed"] = True
                 state["completion_ids"] = state["completion_ids"][:sampling_params.max_tokens]
                 state["completion_mask"] = state["completion_mask"][:len(state["completion_ids"])]
             else:
                 state["messages"].append(self.env_response(state["messages"]))
 
-            # enforce that the completion mask and completion ids are the same length
-            # weird bug that happens rarely and only for certain models; something tokenizer related :(
             if not len(state["completion_mask"]) == len(state["completion_ids"]):
                 print(state["messages"])
                 print(state["completion_mask"])
                 print(state["completion_ids"])
-                min_len = min(len(state["completion_mask"]), len(state["completion_ids"]))
-                state["completion_mask"] = state["completion_mask"][:min_len]
-                state["completion_ids"] = state["completion_ids"][:min_len]
-                # raise ValueError(f"Completion mask and completion ids are not the same length for state {j}")
+                raise ValueError(f"Completion mask and completion ids are not the same length for state {j}")
 
             return j, state
 
