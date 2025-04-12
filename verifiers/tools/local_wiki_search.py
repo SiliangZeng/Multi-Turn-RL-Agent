@@ -53,7 +53,7 @@ def wiki_search(query: str) -> str:
             except:
                 pass
             _searcher = None
-        return f"Error searching Wikipedia: {str(e)}"
+        return f"Error: searching Wikipedia fails: {str(e)}"
     
 if __name__ == "__main__":
     print(wiki_search("What is the capital of France?"))
