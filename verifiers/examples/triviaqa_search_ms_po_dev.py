@@ -66,7 +66,7 @@ outcome_reward_funcs = [
 
 # 配置训练参数
 #run_name = f"sz-5-outcome-reward-step-coef-{args.step_advantage_coe}-ms-grpo-updated-wiki-search_{model_name.split('/')[-1].lower()}"
-run_name = f"GPU-{args.num_gpus}-sz-4-outcome-reward-2-step-reward-discount-factor-{args.discount_factor}-ms-po-wiki-search_{model_name.split('/')[-1].lower()}"
+run_name = f"GPU-{args.num_gpus}-sz-4-outcome-reward-2-step-reward-discount-factor-{args.discount_factor}-mspo-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
 training_args = vf.get_default_grpo_config(
     run_name=run_name,
     num_gpus=args.num_gpus

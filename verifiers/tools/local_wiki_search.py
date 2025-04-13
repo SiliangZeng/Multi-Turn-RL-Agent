@@ -19,7 +19,7 @@ def get_searcher():
             _searcher = None
             
         
-        os.environ["JAVA_OPTS"] = "-Xms8g -Xmx16g -XX:MaxDirectMemorySize=8g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError"
+        os.environ["JAVA_OPTS"] = "-Xms4g -Xmx8g -XX:MaxDirectMemorySize=4g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:+DisableExplicitGC -XX:UseAVX=0 -XX:+PerfDisableSharedMem"
         gc.collect()  
         _searcher = LuceneSearcher.from_prebuilt_index('wikipedia-kilt-doc')
         _query_count = 0  
