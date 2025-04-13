@@ -4,7 +4,7 @@
 MODEL_NAME=${1:-"Qwen/Qwen2.5-7B"}
 LEARNING_RATE=${2:-"1e-6"}
 NUM_ITERATIONS=${6:-"2"}
-MAX_STEPS=${7:-"200"}
+MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
 STEP_ADV_COE=${9:-"0"}  # Default step advantage coefficient is 0.5
 
