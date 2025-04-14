@@ -3,7 +3,7 @@
 MODEL_NAME=${1:-"Qwen/Qwen2.5-7B"}
 LEARNING_RATE=${2:-"1e-6"}
 NUM_ITERATIONS=${6:-"2"}
-MAX_STEPS=${7:-"300"}
+MAX_STEPS=${7:-"250"}
 BETA=${8:-"0"}
 DISCOUNT_FACTOR=${9:-"0.9"}
 
