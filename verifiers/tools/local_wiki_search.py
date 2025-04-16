@@ -9,7 +9,7 @@ _query_count = 0
 def get_searcher():
     global _searcher, _query_count
     
-    if _searcher is None or _query_count >= 20:
+    if _searcher is None or _query_count >= 50:
         
         if _searcher is not None:
             try:
@@ -19,7 +19,7 @@ def get_searcher():
             _searcher = None
             
         
-        os.environ["JAVA_OPTS"] = "-Xms32g -Xmx64g -XX:MaxDirectMemorySize=32g -XX:+UseG1GC -XX:+AlwaysPreTouch -XX:+HeapDumpOnOutOfMemoryError -XX:+DisableExplicitGC -XX:UseAVX=0 -XX:+PerfDisableSharedMem -XX:G1ReservePercent=20 -XX:+ExplicitGCInvokesConcurrent"
+        os.environ["JAVA_OPTS"] = "-Xms16g -Xmx32g -XX:MaxDirectMemorySize=16g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:+DisableExplicitGC -XX:G1ReservePercent=15"
         gc.collect()  
         _searcher = LuceneSearcher.from_prebuilt_index('wikipedia-kilt-doc')
         _query_count = 0  
@@ -43,8 +43,8 @@ def wiki_search(query: str) -> str:
         
         _query_count += 1  
         
-        # Force Python garbage collection more aggressively
-        if _query_count % 5 == 0:
+        # Only run garbage collection occasionally to reduce overhead
+        if _query_count % 20 == 0:
             gc.collect()
             
         return contents
