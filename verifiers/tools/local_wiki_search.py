@@ -2,9 +2,23 @@ from pyserini.search.lucene import LuceneSearcher
 import json
 import gc
 import os
+import subprocess
+import time
 
 _searcher = None
 _query_count = 0  
+
+def setup_system_limits():
+    """尝试修改系统级内存限制"""
+    try:
+        # 增加内存映射限制，Lucene需要大量连续内存
+        subprocess.run("sysctl -w vm.max_map_count=1048576", shell=True)
+        
+        # 移除虚拟内存限制
+        os.system("ulimit -v unlimited")
+        os.system("ulimit -m unlimited")
+    except Exception as e:
+        print(f"Warning: Failed to set system limits: {e}")
 
 def get_searcher():
     global _searcher, _query_count
@@ -17,7 +31,12 @@ def get_searcher():
             except:
                 pass
             _searcher = None
-            
+        
+        # 先尝试设置系统限制
+        setup_system_limits()
+        
+        # 加载前主动进行垃圾回收
+        gc.collect()
         
         os.environ["JAVA_OPTS"] = "-Xms16g -Xmx32g -XX:MaxDirectMemorySize=16g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:+DisableExplicitGC -XX:G1ReservePercent=15"
         gc.collect()  
