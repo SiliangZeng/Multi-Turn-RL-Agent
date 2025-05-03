@@ -7,7 +7,7 @@ from trl.trainer.grpo_trainer import RewardFunc
 
 from verifiers.envs.multistep_env import MultiStepEnv
 from verifiers.parsers import XMLParser
-from verifiers.prompts import DEFAULT_TOOL_PROMPT_TEMPLATE, DEFAULT_TrivialQA_TOOL_PROMPT_TEMPLATE
+from verifiers.prompts import DEFAULT_TOOL_PROMPT_TEMPLATE
 from verifiers.rubrics import ToolRubric
 from verifiers.utils import preprocess_dataset
 
@@ -75,7 +75,7 @@ class ToolEnv(MultiStepEnv):
     def __init__(self,
                  dataset: str = "gsm8k",
                  tools: List[Callable] = [],
-                 system_prompt: str = DEFAULT_TrivialQA_TOOL_PROMPT_TEMPLATE,
+                 system_prompt: str = DEFAULT_TOOL_PROMPT_TEMPLATE,
                  few_shot: List[Dict[str, str]] = [],
                  sampling_args={
                      "stop": ["</tool>", "</answer>"],

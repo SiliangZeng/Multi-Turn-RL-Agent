@@ -16,14 +16,11 @@ pip install flash-attn --no-build-isolation
 
 Install Java environment (if needed)
 ```bash
-apt-get remove --purge openjdk*
+apt-get remove --purge openjdk* -y
 
-# Add Java 21 repository
-apt-get remove --purge openjdk-21-jdk -y
 apt-get update
 apt-get install -y openjdk-21-jdk
 
-# verify
 java -version
 ```
 
@@ -34,15 +31,46 @@ Download Wiki search index
 python verifiers/tools/local_wiki_search.py
 ```
 
+## Search Agent Overview
+
+Tool Env: `verifiers/envs/tool_env.py`
+
+Search Tool: `verifiers/tools/local_wiki_search.py`
+
+System Prompt: `verifiers/prompts/system_prompts.py`
+
+Trainers:
+- MS-GRPO: `verifiers/trainer/ms_grpo_env_trainer.py`
+- MS-PO: `verifiers/trainer/ms_po_env_trainer.py`
+
+Reward Functions `verifiers/rubric/triviaqa_rubric.py`
+- Step-Level Rewards:
+    - `tool_execution_reward_func`
+    - `exist_answer_in_search_results`
+- Outcome-Level Rewards:
+    - `exist_answer_reward_func`
+    - `exact_match_reward_func`
+    - `parser.get_format_reward_func`
+    - `parser.get_xml_reward_func`
+
+
+
 ## Usage
 
 
+Run MS-GRPO `bash scripts/run_ms_grpo.sh`
+
+
+Run MS-PO `bash scripts/run_ms_po.sh`
+
+
+RUn GRPO `bash scripts/run_grpo.sh`
 
 
 
 ## Acknowledgement
 
-Our code implementation is built upon the open-source project [Verifiers](https://github.com/willccbb/verifiers).
+Our code implementation is built upon the open-source project [verifiers](https://github.com/willccbb/verifiers).
 
 ## Citation
 

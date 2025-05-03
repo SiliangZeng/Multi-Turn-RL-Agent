@@ -40,7 +40,7 @@ Tools expect specific JSON input formats. Follow the examples carefully.
 Do not make up tools or arguments that aren't listed.
 """
 
-DEFAULT_TrivialQA_TOOL_PROMPT_TEMPLATE = """\
+DEFAULT_TRIVIALQA_TOOL_PROMPT_TEMPLATE = """\
 You have access to the following tools to help solve problems:
 
 {tool_descriptions}
