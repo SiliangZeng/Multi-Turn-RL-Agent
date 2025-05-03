@@ -84,7 +84,8 @@ class XMLParser:
                 # Return average XML score across all messages
                 if not xml_scores:
                     return 0.0
-                return 0.2 * (sum(xml_scores) / len(xml_scores))  # 0.2 weight as in both rubrics
+                average_score = 0.2 * (sum(xml_scores) / len(xml_scores))  # 0.2 weight as in both rubrics
+                return max(0.0, average_score)  # Ensure score is not negative
             
             # Apply the XML check to each completion trajectory
             return [count_xml(c) for c in completions]
