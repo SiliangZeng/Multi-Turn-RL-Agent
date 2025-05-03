@@ -2,8 +2,7 @@
 
 # install python env
 conda create -n verifier_env python=3.11 -y
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate verifier_env
+source activate verifier_env
 
 pip install -r requirements.txt
 pip install flash-attn --no-build-isolation

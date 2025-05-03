@@ -7,8 +7,7 @@ This repository contains the code of RoSTE introduced in our work: ["Reinforcing
 Install Python environment
 ```bash
 conda create -n verifier_env python=3.11 -y
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate verifier_env
+source activate verifier_env
 
 pip install -r requirements.txt
 pip install flash-attn --no-build-isolation
@@ -31,7 +30,7 @@ Download Wiki search index
 python verifiers/tools/local_wiki_search.py
 ```
 
-## Search Agent Overview
+## Multi-Turn Agent Overview
 
 Tool Env: `verifiers/envs/tool_env.py`
 
@@ -54,13 +53,11 @@ Reward Functions `verifiers/rubric/triviaqa_rubric.py`
     - `parser.get_xml_reward_func`
 
 
-
 ## Usage
-
 
 Run MS-GRPO
 ```bash
-# `bash scripts/run_ms_grpo.sh`
+# bash scripts/run_ms_grpo.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -78,7 +75,7 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
 
 Run MS-PO `bash scripts/run_ms_po.sh`
 ```bash
-# `bash scripts/run_ms_po.sh`
+# bash scripts/run_ms_po.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
