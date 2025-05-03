@@ -49,4 +49,4 @@ accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MI
     --max_steps ${MAX_STEPS} \
     --beta ${BETA} \
     --trainer "ms_grpo" \
-    --step_advantage_coe ${STEP_ADV_COEF} \
+    --step_advantage_coef ${STEP_ADV_COEF} \

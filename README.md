@@ -58,15 +58,77 @@ Reward Functions `verifiers/rubric/triviaqa_rubric.py`
 ## Usage
 
 
-Run MS-GRPO `bash scripts/run_ms_grpo.sh`
-
+Run MS-GRPO
+```bash
+# `bash scripts/run_ms_grpo.sh`
+accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
+    verifiers/examples/triviaqa_search.py \
+    --model_name "Qwen/Qwen2.5-7B" \
+    --num_gpus 8 \
+    --learning_rate 1e-6 \
+    --num_generations 21 \
+    --per_device_train_batch_size 12 \
+    --grad_accum_steps 4 \
+    --num_iterations 2 \
+    --max_steps 300 \
+    --beta 0 \
+    --trainer "ms_grpo" \
+    --step_advantage_coef 1 \
+```
 
 Run MS-PO `bash scripts/run_ms_po.sh`
+```bash
+# `bash scripts/run_ms_po.sh`
+accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
+    verifiers/examples/triviaqa_search.py \
+    --model_name "Qwen/Qwen2.5-7B" \
+    --num_gpus 8 \
+    --learning_rate 1e-6 \
+    --num_generations 21 \
+    --per_device_train_batch_size 12 \
+    --grad_accum_steps 4 \
+    --num_iterations 2 \
+    --max_steps 300 \
+    --beta 0 \
+    --trainer "ms_po" \
+    --discount_factor 1 \
+```
 
+Run GRPO with Step-Level Rewards
+```bash
+# bash scripts/run_grpo.sh
+accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
+    verifiers/examples/triviaqa_search.py \
+    --model_name "Qwen/Qwen2.5-7B" \
+    --num_gpus 8 \
+    --learning_rate 1e-6 \
+    --num_generations 21 \
+    --per_device_train_batch_size 12 \
+    --grad_accum_steps 4 \
+    --num_iterations 2 \
+    --max_steps 300 \
+    --beta 0 \
+    --trainer "grpo" \
+    --use_step_reward True \
+```
 
-RUn GRPO `bash scripts/run_grpo.sh`
-
-
+RUn GRPO without Step-Level Rewards
+```bash
+# bash scripts/run_grpo.sh
+accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
+    verifiers/examples/triviaqa_search.py \
+    --model_name "Qwen/Qwen2.5-7B" \
+    --num_gpus 8 \
+    --learning_rate 1e-6 \
+    --num_generations 21 \
+    --per_device_train_batch_size 12 \
+    --grad_accum_steps 4 \
+    --num_iterations 2 \
+    --max_steps 300 \
+    --beta 0 \
+    --trainer "grpo" \
+    --use_step_reward False \
+```
 
 ## Acknowledgement
 
