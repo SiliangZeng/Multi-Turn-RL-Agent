@@ -38,12 +38,8 @@ Search Tool: `verifiers/tools/local_wiki_search.py`
 
 System Prompt: `verifiers/prompts/system_prompts.py`
 
-Trainers:
-- MS-GRPO: `verifiers/trainer/ms_grpo_env_trainer.py`
-- MS-PO: `verifiers/trainer/ms_po_env_trainer.py`
-
 Reward Functions `verifiers/rubric/triviaqa_rubric.py`
-- Step-Level Rewards:
+- Turn-Level Rewards:
     - `tool_execution_reward_func`
     - `exist_answer_in_search_results`
 - Outcome-Level Rewards:
@@ -52,6 +48,20 @@ Reward Functions `verifiers/rubric/triviaqa_rubric.py`
     - `parser.get_format_reward_func`
     - `parser.get_xml_reward_func`
 
+Trainers:
+- GRPO: original GRPO with trajectory-level advantage estimation 
+    - GRPO-OR: GRPO using only outcome rewards
+    - GRPO-MR: GRPO using merged outcome and turn-level rewards 
+- Multi-Turn GRPO: proposed multi-turn GRPO with turn-level advantage estimation 
+    - MT-GPRO-AAE: multi-turn GRPO with turn-level additional advantage estimation 
+    - MT-GPRO-CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
+
+| **Trainer**       | **Reward Type**                  | **Advantage Estimation Method**                          |
+|--------------------|----------------------------------|----------------------------------------------------------|
+| **GRPO-OR**       | Outcome Rewards                 | Trajectory-Level Advantage Estimation                   |
+| **GRPO-MR**       | Merged Outcome + Turn-Level Rewards | Trajectory-Level Advantage Estimation                   |
+| **MT-GRPO-AAE**   | Outcome + Turn-Level Rewards    | Turn-Level Additional Advantage Estimation              |
+| **MT-GRPO-CAE**   | Outcome + Turn-Level Rewards    | Turn-Level Cumulative-Reward-Induced Advantage Estimation |
 
 ## Usage
 
