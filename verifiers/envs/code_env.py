@@ -4,13 +4,13 @@ from typing import List, Dict, Any
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 
-from verifiers.envs.multistep_env import MultiStepEnv
+from verifiers.verifiers.envs.multiturn_env import MultiTurnEnv
 from verifiers.parsers import XMLParser
 from verifiers.prompts import CODE_FEW_SHOT, CODE_PROMPT
 from verifiers.rubrics import CodeRubric
 from verifiers.utils import preprocess_dataset
 
-class CodeEnv(MultiStepEnv):
+class CodeEnv(MultiTurnEnv):
     def __init__(self,
                  dataset: str = "gsm8k",        
                  system_prompt: str = CODE_PROMPT,

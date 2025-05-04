@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Callable
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 
-from verifiers.envs.multistep_env import MultiStepEnv
+from verifiers.verifiers.envs.multiturn_env import MultiTurnEnv
 from verifiers.parsers import XMLParser
 from verifiers.prompts import DEFAULT_TOOL_PROMPT_TEMPLATE
 from verifiers.rubrics import ToolRubric
@@ -71,7 +71,7 @@ def format_tool_descriptions(schemas: List[Dict[str, Any]]) -> str:
     
     return "\n\n".join(descriptions)
 
-class ToolEnv(MultiStepEnv):
+class ToolEnv(MultiTurnEnv):
     def __init__(self,
                  dataset: str = "gsm8k",
                  tools: List[Callable] = [],

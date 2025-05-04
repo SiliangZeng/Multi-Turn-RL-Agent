@@ -11,7 +11,7 @@ from ..imports import LLM, SamplingParams  # type: ignore
 from verifiers.envs.environment import Environment
 
 
-class MultiStepEnv(Environment):
+class MultiTurnEnv(Environment):
     def __init__(self,
                  system_prompt: str = "",
                  few_shot: List[Dict[str, str]] = [],
