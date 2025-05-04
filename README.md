@@ -53,15 +53,15 @@ Trainers:
     - GRPO-OR: GRPO using only outcome rewards
     - GRPO-MR: GRPO using merged outcome and turn-level rewards 
 - Multi-Turn GRPO: proposed multi-turn GRPO with turn-level advantage estimation 
-    - MT-GPRO-AAE: multi-turn GRPO with turn-level additional advantage estimation 
-    - MT-GPRO-CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
+    - MT-GRPO-AAE: multi-turn GRPO with turn-level additive advantage estimation 
+    - MT-GRPO-CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
 
-| **Trainer**       | **Reward Type**                  | **Advantage Estimation Method**                          |
-|--------------------|----------------------------------|----------------------------------------------------------|
-| **GRPO-OR**       | Outcome Rewards                 | Trajectory-Level Advantage Estimation                   |
-| **GRPO-MR**       | Merged Outcome + Turn-Level Rewards | Trajectory-Level Advantage Estimation                   |
-| **MT-GRPO-AAE**   | Outcome + Turn-Level Rewards    | Turn-Level Additional Advantage Estimation              |
-| **MT-GRPO-CAE**   | Outcome + Turn-Level Rewards    | Turn-Level Cumulative-Reward-Induced Advantage Estimation |
+| **Trainer**      | **Reward Type**                             | **Advantage Estimation Method**                                       |
+|------------------|---------------------------------------------|-----------------------------------------------------------------------|
+| **GRPO-OR**      | **O**utcome **R**ewards                     | Trajectory-Level Advantage Estimation                                 |
+| **GRPO-MR**      | **M**erged Outcome + Turn-Level **R**ewards | Trajectory-Level Advantage Estimation                                 |
+| **MT-GRPO-AAE**  | Outcome + Turn-Level Rewards                | Turn-Level **A**dditive **A**dvantage **E**stimation                  |
+| **MT-GRPO-CAE**  | Outcome + Turn-Level Rewards                | Turn-Level **C**umulative-Reward-Induced **A**dvantage **E**stimation |
 
 ## Usage
 
