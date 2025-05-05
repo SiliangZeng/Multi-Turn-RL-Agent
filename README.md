@@ -1,6 +1,6 @@
 # Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment
 
-This repository contains the code of RoSTE introduced in our work: ["Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment"]()
+This repository contains the code in our work: ["Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment"]()
 
 ![](./assets/rl_agent.png)
 
