@@ -16,7 +16,7 @@ parser.add_argument('--grad_accum_steps', type=int, default=4, help='Gradient ac
 parser.add_argument('--num_iterations', type=int, default=2, help='Number of iterations (default: 2)')
 parser.add_argument('--max_steps', type=int, default=200, help='Maximum number of training steps (default: 200)')
 parser.add_argument('--beta', type=float, default=0.01, help='Beta parameter for KL divergence (default: 0.01)')
-parser.add_argument('--trainer', type=str, default="ms_grpo", help='Trainer type (default: ms_grpo)')
+parser.add_argument('--trainer', type=str, default="mt_grpo", choices=["mt_grpo", "grpo"], help='Trainer type (default: mt_grpo)')
 parser.add_argument('--no_turn_reward', action="store_true", help='Use turn reward (default: True)')
 parser.add_argument('--advantage_est', type=str, default="aae", choices=["aae", "cae"], help='Advantage estimation method (default: aae)')
 parser.add_argument('--turn_advantage_coef', type=float, default=1.0, help='Coefficient for turn-level advantage (default: 1.0)')
