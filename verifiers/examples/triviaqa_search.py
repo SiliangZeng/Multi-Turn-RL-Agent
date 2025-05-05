@@ -82,9 +82,13 @@ print(f"  Grad accumulation steps: {training_args.gradient_accumulation_steps}")
 print(f"  Num iterations: {training_args.num_iterations}")
 print(f"  Max steps: {training_args.max_steps}")
 print(f"  Beta: {training_args.beta}")
+print(f"  Trainer: {args.trainer}")
+print(f"  No turn reward: {args.no_turn_reward}")
+print(f"  Advantage estimation method: {args.advantage_est}")
 print(f"  Turn advantage coefficient: {args.turn_advantage_coef}")
+print(f"  Discount factor: {args.discount_factor}")
 
-if args.trainer == "ms_grpo":
+if args.trainer == "mt_grpo":
     trainer = vf.MTGRPOEnvTrainer(
         model=model,
         processing_class=tokenizer,
@@ -97,7 +101,7 @@ if args.trainer == "ms_grpo":
         args=training_args,
         train_dataset=train_dataset
     )
-else: # GRPO
+elif args.trainer == "grpo":
     trainer = vf.GRPOEnvTrainer(
         model=model,
         processing_class=tokenizer,

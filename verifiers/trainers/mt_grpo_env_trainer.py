@@ -50,10 +50,11 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             **kwargs,
     ):
 
-
         super().__init__(
             model=model,
-            reward_funcs=self.combined_reward_funcs,
+            env=env,
+            turn_reward_funcs=turn_reward_funcs,
+            outcome_reward_funcs=outcome_reward_funcs,
             args=args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
@@ -117,7 +118,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
         cumulative_rewards = turn_rewards + self.discount_factor * outcome_rewards
         cumulative_mean_grouped_rewards, cumulative_std_grouped_rewards, cumulative_advantages = self._compute_normalized_advantages(cumulative_rewards, len(prompts))
         advantages = self._assign_advantages(
-            completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, self.advantage_est, result_segment_indices
+            completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, result_segment_indices
         )
         
 
@@ -199,7 +200,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             
         return result_segment_indices
     
-    def _assign_advantages(self, completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, advantage_est, result_segment_indices):
+    def _assign_advantages(self, completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, result_segment_indices):
         device = self.accelerator.device
         batch_size, seq_len = completion_mask.shape
         assigned_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
@@ -227,7 +228,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             combined_adv_expanded = combined_adv * torch.ones_like(mask_row, dtype=torch.float32)
             cumulative_adv_expanded = cumulative_adv * torch.ones_like(mask_row, dtype=torch.float32)
 
-            if advantage_est == "aae":
+            if self.advantage_est == "aae":
 
                 if result_segment > 0:
                     segment_boundaries = get_segment_boundaries(mask_row)
@@ -240,7 +241,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
                 else:
                     assigned_advantages[i] = combined_adv_expanded
 
-            elif advantage_est == "cae":
+            elif self.advantage_est == "cae":
 
                 if result_segment > 0:
                     segment_boundaries = get_segment_boundaries(mask_row)
