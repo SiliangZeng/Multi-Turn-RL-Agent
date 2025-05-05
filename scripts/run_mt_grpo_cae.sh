@@ -12,7 +12,7 @@ GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
-DICOUNT_FACTOR=${9:-"1"}
+DISCOUNT_FACTOR=${9:-"1"}
 
 # Detect the number of GPUs on the machine
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
@@ -34,7 +34,7 @@ fi
 
 # Display configuration
 echo "Using ${NUM_GPUS_MINUS_1} GPUs for training and 1 GPU for rollout generation with model ${MODEL_NAME}"
-echo "Discount factor: ${DICOUNT_FACTOR}"
+echo "Discount factor: ${DISCOUNT_FACTOR}"
 
 # Launch the multi-turn GRPO training
 accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MINUS_1} \
@@ -50,4 +50,4 @@ accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MI
     --beta ${BETA} \
     --trainer "mt_grpo" \
     --advantage_est "cae" \
-    --discount_factor ${DICOUNT_FACTOR} \
+    --discount_factor ${DISCOUNT_FACTOR} \
