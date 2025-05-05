@@ -2,6 +2,8 @@
 
 This repository contains the code of RoSTE introduced in our work: ["Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment"]()
 
+![](./assets/rl_agent.png)
+
 ## Installation
 
 Install Python environment
@@ -42,7 +44,7 @@ Reward Functions `verifiers/rubric/triviaqa_rubric.py`
 - Turn-Level Rewards:
     - `tool_execution_reward_func`
     - `exist_answer_in_search_results`
-- Outcome-Level Rewards:
+- Outcome Rewards:
     - `exist_answer_reward_func`
     - `exact_match_reward_func`
     - `parser.get_format_reward_func`
@@ -53,21 +55,21 @@ Trainers:
     - GRPO-OR: GRPO using only outcome rewards
     - GRPO-MR: GRPO using merged outcome and turn-level rewards 
 - Multi-Turn GRPO: proposed multi-turn GRPO with turn-level advantage estimation 
-    - MT-GRPO-AAE: multi-turn GRPO with turn-level additive advantage estimation 
-    - MT-GRPO-CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
+    - MT-GRPO + AAE: multi-turn GRPO with turn-level additive advantage estimation 
+    - MT-GRPO + CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
 
 | **Trainer**      | **Reward Type**                             | **Advantage Estimation Method**                                       |
 |------------------|---------------------------------------------|-----------------------------------------------------------------------|
 | **GRPO-OR**      | **O**utcome **R**ewards                     | Trajectory-Level Advantage Estimation                                 |
 | **GRPO-MR**      | **M**erged Outcome + Turn-Level **R**ewards | Trajectory-Level Advantage Estimation                                 |
-| **MT-GRPO-AAE**  | Outcome + Turn-Level Rewards                | Turn-Level **A**dditive **A**dvantage **E**stimation                  |
-| **MT-GRPO-CAE**  | Outcome + Turn-Level Rewards                | Turn-Level **C**umulative-Reward-Induced **A**dvantage **E**stimation |
+| **MT-GRPO + AAE**  | Outcome + Turn-Level Rewards                | Turn-Level **A**dditive **A**dvantage **E**stimation                  |
+| **MT-GRPO + CAE**  | Outcome + Turn-Level Rewards                | Turn-Level **C**umulative-Reward-Induced **A**dvantage **E**stimation |
 
 ## Usage
 
-Run MS-GRPO
+Run MT-GRPO + AAE
 ```bash
-# bash scripts/run_ms_grpo.sh
+# bash scripts/run_mt_grpo_aae.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -79,13 +81,14 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --num_iterations 2 \
     --max_steps 300 \
     --beta 0 \
-    --trainer "ms_grpo" \
+    --trainer "mt_grpo" \
+    --advantage_est "aae" \
     --step_advantage_coef 1 \
 ```
 
-Run MS-PO `bash scripts/run_ms_po.sh`
+Run MT-GRPO + CAE
 ```bash
-# bash scripts/run_ms_po.sh
+# bash scripts/run_mt_grpo_cae.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -97,13 +100,14 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --num_iterations 2 \
     --max_steps 300 \
     --beta 0 \
-    --trainer "ms_po" \
+    --trainer "mt_grpo" \
+    --advantage_est "cae" \
     --discount_factor 1 \
 ```
 
-Run GRPO with Step-Level Rewards
+Run GRPO-OR
 ```bash
-# bash scripts/run_grpo.sh
+# bash scripts/run_grpo_or.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -116,12 +120,12 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --max_steps 300 \
     --beta 0 \
     --trainer "grpo" \
-    --use_step_reward True \
+    --no_step_reward \
 ```
 
-RUn GRPO without Step-Level Rewards
+Run GRPO-MR
 ```bash
-# bash scripts/run_grpo.sh
+# bash scripts/run_grpo_mr.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -134,7 +138,6 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --max_steps 300 \
     --beta 0 \
     --trainer "grpo" \
-    --use_step_reward False \
 ```
 
 ## Acknowledgement

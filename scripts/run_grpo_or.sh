@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export WANDB_API_KEY="810f91e58aa0fd1d03b11c60b0d1cffbb1d941f4"
+export WANDB_ENTITY="rl_agent"
+export WANDB_PROJECT="triviaqa_search_new"
+
 # Activate the environment
 source activate verifier_env
 
@@ -12,7 +16,6 @@ GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
-STEP_ADV_COEF=${9:-"0"} # if 0, run grpo
 
 # Detect the number of GPUs on the machine
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
@@ -34,9 +37,8 @@ fi
 
 # Display configuration
 echo "Using ${NUM_GPUS_MINUS_1} GPUs for training and 1 GPU for rollout generation with model ${MODEL_NAME}"
-echo "Step advantage coefficient: ${STEP_ADV_COEF}"
 
-# Launch the multi-step GRPO training
+# Launch the GRPO training
 accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MINUS_1} \
     verifiers/examples/triviaqa_search.py \
     --model_name "${MODEL_NAME}" \
@@ -49,5 +51,4 @@ accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MI
     --max_steps ${MAX_STEPS} \
     --beta ${BETA} \
     --trainer "grpo" \
-    --step_advantage_coef ${STEP_ADV_COEF} \
-    --use_step_reward False \
+    --no_turn_reward \

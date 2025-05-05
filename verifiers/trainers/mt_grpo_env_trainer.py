@@ -19,7 +19,7 @@ from trl.trainer.utils import pad
 
 from verifiers.envs.environment import Environment
 from verifiers.utils.logging_utils import print_prompt_completions_sample
-
+from verifiers.trainers.grpo_env_trainer import GRPOEnvTrainer
 if is_peft_available():
     from peft import PeftConfig
 
@@ -28,7 +28,7 @@ if is_wandb_available():
 
 RewardFunc = Union[str, PreTrainedModel, Callable[[List, List], List[float]]]
 
-class GRPOEnvTrainer(GRPOTrainer):
+class MTGRPOEnvTrainer(GRPOEnvTrainer):
     def __init__(
             self,
             model: Union[str, PreTrainedModel],
@@ -37,7 +37,9 @@ class GRPOEnvTrainer(GRPOTrainer):
             outcome_reward_funcs: Union[RewardFunc, List[RewardFunc]],
             turn_reward_weights: Optional[List[float]] = None,
             outcome_reward_weights: Optional[List[float]] = None,
-            no_turn_reward: Optional[bool] = None,
+            advantage_est: str = "aae",
+            turn_advantage_coef: float = 1.0,
+            discount_factor: float = 1.0,
             args: Optional[GRPOConfig] = None,
             train_dataset: Optional[Union[Dataset, IterableDataset]] = None,
             eval_dataset: Optional[Union[Dataset, IterableDataset]] = None,
@@ -47,32 +49,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             peft_config: Optional["PeftConfig"] = None,
             **kwargs,
     ):
-        if not args.use_vllm:
-            raise ValueError("vLLM must be enabled for GRPOEnvTrainer")
-        if not (callable(turn_reward_funcs) or (isinstance(turn_reward_funcs, list) and all(callable(f) for f in turn_reward_funcs))):
-            raise ValueError("turn_reward_funcs must be a function or a list of functions.")
-        if not (callable(outcome_reward_funcs) or (isinstance(outcome_reward_funcs, list) and all(callable(f) for f in outcome_reward_funcs))):
-            raise ValueError("outcome_reward_funcs must be a function or a list of functions.")
 
-        self.turn_reward_funcs = turn_reward_funcs
-        self.outcome_reward_funcs = outcome_reward_funcs
-        self.combined_reward_funcs = turn_reward_funcs + outcome_reward_funcs
-
-        self.num_turn_funcs = len(turn_reward_funcs)
-        self.num_outcome_funcs = len(outcome_reward_funcs)
-        self.num_combined_reward_funcs = len(self.combined_reward_funcs)
-
-        if turn_reward_weights is None:
-            self.turn_reward_weights = torch.ones(self.num_turn_funcs)
-        else:
-            self.turn_reward_weights = torch.tensor(turn_reward_weights)
-        if outcome_reward_weights is None:
-            self.outcome_reward_weights = torch.ones(self.num_outcome_funcs)
-        else:
-            self.outcome_reward_weights = torch.tensor(outcome_reward_weights)
-        self.combined_reward_weights = torch.cat([self.turn_reward_weights, self.outcome_reward_weights], dim=0)
-
-        self.no_turn_reward = no_turn_reward
 
         super().__init__(
             model=model,
@@ -87,6 +64,11 @@ class GRPOEnvTrainer(GRPOTrainer):
             **kwargs,
         )
         self.env = env
+        if advantage_est not in ["aae", "cae"]:
+            raise ValueError(f"Invalid advantage_est: {advantage_est}. Expected 'aae' or 'cae'.")
+        self.advantage_est = advantage_est
+        self.turn_advantage_coef = turn_advantage_coef
+        self.discount_factor = discount_factor
 
     def _generate_and_score_completions(
          self, inputs: Dict[str, Union[torch.Tensor, Any]]   
@@ -123,12 +105,21 @@ class GRPOEnvTrainer(GRPOTrainer):
         turn_rewards = (turn_rewards_per_func * self.turn_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
         outcome_rewards = (outcome_rewards_per_func * self.outcome_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
         combined_rewards = (combined_rewards_per_func * self.combined_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
+        
 
         turn_mean_grouped_rewards, turn_std_grouped_rewards, turn_advantages = self._compute_normalized_advantages(turn_rewards, len(prompts))
         outcome_mean_grouped_rewards, outcome_std_grouped_rewards, outcome_advantages = self._compute_normalized_advantages(outcome_rewards, len(prompts))
         combined_mean_grouped_rewards, combined_std_grouped_rewards, combined_advantages = self._compute_normalized_advantages(combined_rewards, len(prompts))
+
+        result_segment_indices = self._find_result_positions(completion_ids, completion_messages)
+ 
+
+        cumulative_rewards = turn_rewards + self.discount_factor * outcome_rewards
+        cumulative_mean_grouped_rewards, cumulative_std_grouped_rewards, cumulative_advantages = self._compute_normalized_advantages(cumulative_rewards, len(prompts))
+        advantages = self._assign_advantages(
+            completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, self.advantage_est, result_segment_indices
+        )
         
-        advantages = outcome_advantages if self.no_turn_reward else combined_advantages
 
         mode = "eval" if self.control.should_evaluate else "train"
 
@@ -187,111 +178,125 @@ class GRPOEnvTrainer(GRPOTrainer):
             "advantages": advantages,
         }
         
-    def _prepare_prompt_inputs(self, inputs):
-        prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
-        prompt_inputs = self.processing_class(
-            prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False
-        )
-        prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
-        prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-
-        if self.max_prompt_length is not None:
-            prompt_ids = prompt_ids[:, -self.max_prompt_length:]
-            prompt_mask = prompt_mask[:, -self.max_prompt_length:]
+    def _find_result_positions(self, completion_ids, completion_messages):
+        result_segment_indices = []
+        
+        for i, messages in enumerate(completion_messages):
+            result_segment = -1
             
-        return prompt_ids, prompt_mask
+            if isinstance(messages, list):
+                for j, msg in enumerate(messages):
+                    if msg.get('role') == 'assistant':
+                        if j + 1 < len(messages) and messages[j + 1].get('role') == 'user':
+                            user_msg = messages[j + 1].get('content', '')
+                            if '<result>' in user_msg:
+                                result_segment = j + 1
+                                break
+            elif isinstance(messages, str):
+                raise ValueError("Completion is a string, which is not supported.")
+            
+            result_segment_indices.append(result_segment)
+            
+        return result_segment_indices
     
-    def _generate_completions(self, prompts):
-        all_prompts = gather_object(prompts)
-        if self.accelerator.is_main_process:
-            env_result = self.env.generate(
-                prompts=all_prompts,
-                llm=self.llm,
-                sampling_params=self.sampling_params,
-            )
-            completion_ids = env_result['ids']
-            completion_messages = env_result['messages']
-            completion_mask = env_result['mask']
-        else:
-            completion_ids = [None] * len(all_prompts)
-            completion_messages = [None] * len(all_prompts)
-            completion_mask = [None] * len(all_prompts)
-
-        completion_ids = broadcast_object_list(completion_ids, from_process=0)
-        completion_messages = broadcast_object_list(completion_messages, from_process=0)
-        completion_mask = broadcast_object_list(completion_mask, from_process=0)
-
-        process_slice = slice(
-            self.accelerator.process_index * len(prompts),
-            (self.accelerator.process_index + 1) * len(prompts),
-        )
-
-        completion_ids = completion_ids[process_slice]
-        completion_messages = completion_messages[process_slice]
-        completion_mask = completion_mask[process_slice]
-        
+    def _assign_advantages(self, completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, advantage_est, result_segment_indices):
         device = self.accelerator.device
-        completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
-        completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
+        batch_size, seq_len = completion_mask.shape
+        assigned_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
 
-        completion_mask = [torch.tensor(mask, device=device) for mask in completion_mask]
-        completion_mask = pad(completion_mask, padding_value=0)
-        
-        return completion_ids, completion_messages, completion_mask
+        def get_segment_boundaries(mask_row):
+            boundaries = [0]
+            for j in range(1, seq_len):
+                if mask_row[j] != mask_row[j - 1]:
+                    boundaries.append(j)
+            boundaries.append(seq_len)
+            return boundaries
+
+        for i in range(batch_size):
+            result_segment = result_segment_indices[i]
+            mask_row = completion_mask[i]
+            
+            outcome_adv  = outcome_advantages[i]
+            turn_adv = turn_advantages[i]
+            combined_adv = combined_advantages[i]
+            cumulative_adv = cumulative_advantages[i]     
+                
+
+            outcome_adv_expanded = outcome_adv * torch.ones_like(mask_row, dtype=torch.float32)
+            turn_adv_expanded = turn_adv * torch.ones_like(mask_row, dtype=torch.float32)
+            combined_adv_expanded = combined_adv * torch.ones_like(mask_row, dtype=torch.float32)
+            cumulative_adv_expanded = cumulative_adv * torch.ones_like(mask_row, dtype=torch.float32)
+
+            if advantage_est == "aae":
+
+                if result_segment > 0:
+                    segment_boundaries = get_segment_boundaries(mask_row)
+                    if result_segment < len(segment_boundaries):
+                        split_point = segment_boundaries[result_segment]
+                        before_result_mask = (torch.arange(seq_len, device=device) < split_point).float() * mask_row
+                        assigned_advantages[i] = outcome_adv_expanded + self.turn_advantage_coef * turn_adv_expanded * before_result_mask
+                    else:
+                        raise ValueError(f"Not enough segments found in completion {i}")
+                else:
+                    assigned_advantages[i] = combined_adv_expanded
+
+            elif advantage_est == "cae":
+
+                if result_segment > 0:
+                    segment_boundaries = get_segment_boundaries(mask_row)
+                    if result_segment < len(segment_boundaries):
+                        split_point = segment_boundaries[result_segment]
+                        before_result_mask = (torch.arange(seq_len, device=device) < split_point).float()
+                        after_result_mask = 1.0 - before_result_mask
+                        assigned_advantages[i] = cumulative_adv_expanded * before_result_mask + outcome_adv_expanded * after_result_mask
+                    else:
+                        raise ValueError(f"Not enough segments found in completion {i}")
+                else:
+                    assigned_advantages[i] = cumulative_adv_expanded
+
+        return assigned_advantages
+
     
-    def _prepare_model_inputs(self, prompt_ids, prompt_mask, completion_ids, completion_mask):
-        prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        if return_outputs:
+            raise ValueError("The GRPOTrainer does not support returning outputs")
+        prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
+        completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
+        input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
         logits_to_keep = completion_ids.size(1)
-        return prompt_completion_ids, attention_mask, logits_to_keep
-    
-    def _compute_logps(self, prompt_completion_ids, attention_mask, logits_to_keep):
-        with torch.no_grad():
-            if self.num_iterations > 1:
-                old_per_token_logps = self._get_per_token_logps(
-                    self.model, prompt_completion_ids, attention_mask, logits_to_keep
-                )
-            else:
-                old_per_token_logps = None
+        per_token_logps = self._get_per_token_logps(model, input_ids, attention_mask, logits_to_keep)
 
-            if self.beta == 0.0:
-                ref_per_token_logps = None
-            elif self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(
-                    self.ref_model, prompt_completion_ids, attention_mask, logits_to_keep
-                )
-            else:
-                with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(
-                        self.model, prompt_completion_ids, attention_mask, logits_to_keep
-                    )
-                    
-        return old_per_token_logps, ref_per_token_logps
-    
-    def _calculate_rewards(self, prompts, completions, reward_funcs, inputs):
-        device = self.accelerator.device
-        rewards_per_func = torch.zeros(len(prompts), len(reward_funcs), device=device)
+        if self.beta != 0.0:
+            ref_per_token_logps = inputs["ref_per_token_logps"]
+            per_token_kl = (
+                torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+            )
+
+        advantages = inputs["advantages"]
+        old_per_token_logps = inputs["old_per_token_logps"] if self.num_iterations > 1 else per_token_logps.detach()
+        coef_1 = torch.exp(per_token_logps - old_per_token_logps)
+        coef_2 = torch.clamp(coef_1, 1 - self.epsilon, 1 + self.epsilon)
         
-        for i, reward_func in enumerate(reward_funcs):
-            keys = [key for key in inputs[0] if key not in ["prompt", "completion"]]
-            reward_kwargs = {key: [example[key] for example in inputs] for key in keys}
-            output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
-            rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
+        if len(advantages.shape) == 2:
+            per_token_loss1 = coef_1 * advantages
+            per_token_loss2 = coef_2 * advantages
+        else:
+            per_token_loss1 = coef_1 * advantages.unsqueeze(1)
+            per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+            
+        per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        if self.beta != 0.0:
+            per_token_loss = per_token_loss + self.beta * per_token_kl
+        loss = (per_token_loss * completion_mask).sum() / completion_mask.sum()
 
-        return gather(rewards_per_func)
-    
-    def _compute_normalized_advantages(self, rewards, slice_length=None):
-        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
-        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
+        mode = "eval" if self.control.should_evaluate else "train"
 
-        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
+        if self.beta != 0.0:
+            mean_kl = (per_token_kl * completion_mask).sum() / completion_mask.sum()
+            self._metrics[mode]["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
 
-        process_slice = slice(
-            self.accelerator.process_index * slice_length,
-            (self.accelerator.process_index + 1) * slice_length,
-        )
-        advantages = advantages[process_slice]
-        
-        return mean_grouped_rewards, std_grouped_rewards, advantages
+        is_clipped = (per_token_loss1 < per_token_loss2).float()
+        clip_ratio = (is_clipped * completion_mask).sum() / completion_mask.sum()
+        self._metrics[mode]["clip_ratio"].append(self.accelerator.gather_for_metrics(clip_ratio).mean().item())
+        return loss

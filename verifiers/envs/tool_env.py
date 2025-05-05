@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Callable
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 
-from verifiers.verifiers.envs.multiturn_env import MultiTurnEnv
+from verifiers.envs.multiturn_env import MultiTurnEnv
 from verifiers.parsers import XMLParser
 from verifiers.prompts import DEFAULT_TOOL_PROMPT_TEMPLATE
 from verifiers.rubrics import ToolRubric

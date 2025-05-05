@@ -12,7 +12,6 @@ GRAD_ACCUM_STEPS=${5:-"4"}
 NUM_ITERATIONS=${6:-"2"}
 MAX_STEPS=${7:-"300"}
 BETA=${8:-"0"}
-STEP_ADV_COEF=${9:-"1"}
 
 # Detect the number of GPUs on the machine
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
@@ -34,9 +33,8 @@ fi
 
 # Display configuration
 echo "Using ${NUM_GPUS_MINUS_1} GPUs for training and 1 GPU for rollout generation with model ${MODEL_NAME}"
-echo "Step advantage coefficient: ${STEP_ADV_COEF}"
 
-# Launch the multi-step GRPO training
+# Launch the GRPO training
 accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MINUS_1} \
     verifiers/examples/triviaqa_search.py \
     --model_name "${MODEL_NAME}" \
@@ -48,5 +46,4 @@ accelerate launch --config-file configs/zero3.yaml --num-processes ${NUM_GPUS_MI
     --num_iterations ${NUM_ITERATIONS} \
     --max_steps ${MAX_STEPS} \
     --beta ${BETA} \
-    --trainer "ms_grpo" \
-    --step_advantage_coef ${STEP_ADV_COEF} \
+    --trainer "grpo" \

@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 
-from verifiers.verifiers.envs.multiturn_env import MultiTurnEnv
+from verifiers.envs.multiturn_env import MultiTurnEnv
 from verifiers.prompts import SIMPLE_PROMPT, DOUBLECHECK_FEW_SHOT
 from verifiers.rubrics import MathRubric
 from verifiers.utils import preprocess_dataset

@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 
-from verifiers.verifiers.envs.multiturn_env import MultiTurnEnv
+from verifiers.envs.multiturn_env import MultiTurnEnv
 from verifiers.parsers import XMLParser
 from verifiers.prompts import CODE_FEW_SHOT, CODE_PROMPT
 from verifiers.rubrics import CodeRubric
