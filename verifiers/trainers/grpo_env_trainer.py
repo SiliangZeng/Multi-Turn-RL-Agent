@@ -153,29 +153,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         self._metrics[mode]["reward_std/combined"].append(combined_std_grouped_rewards.mean().item())
 
         if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
-            prompts_to_log = gather_object(prompts)
-            completions_to_log = gather_object(completion_messages)
-            rewards_to_log = combined_rewards.tolist()
-
-            if self.accelerator.is_main_process:
-                if is_rich_available():
-                    print_prompt_completions_sample(
-                        [str(prompts_to_log[0][-1]["content"])],
-                        [completions_to_log[0]],
-                        [rewards_to_log[0]],
-                        self.state.global_step,
-                    )
-                if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None:
-                    import pandas as pd
-
-                    table = {
-                        "step": [str(self.state.global_step)] * len(combined_rewards),
-                        "prompt": prompts_to_log,
-                        "completion": completions_to_log,
-                        "reward": combined_rewards.tolist(),
-                    }
-                    df = pd.DataFrame(table)
-                    wandb.log({"completions": wandb.Table(dataframe=df)})
+            self._log_completion_samples(prompts, completion_messages, combined_rewards)
 
         return {
             "prompt_ids": prompt_ids,
@@ -295,3 +273,29 @@ class GRPOEnvTrainer(GRPOTrainer):
         advantages = advantages[process_slice]
         
         return mean_grouped_rewards, std_grouped_rewards, advantages
+    
+    def _log_completion_samples(self, prompts, completions, rewards):
+        prompts_to_log = gather_object(prompts)
+        completions_to_log = gather_object(completions)
+        rewards_to_log = rewards.tolist()
+
+        if self.accelerator.is_main_process:
+            if is_rich_available():
+                print_prompt_completions_sample(
+                    [str(prompts_to_log[0][-1]["content"])],
+                    [completions_to_log[0]],
+                    [rewards_to_log[0]],
+                    self.state.global_step,
+                )
+            if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None:
+                import pandas as pd
+
+                table = {
+                    "step": [str(self.state.global_step)] * len(rewards),
+                    "prompt": prompts_to_log,
+                    "completion": completions_to_log,
+                    "reward": rewards.tolist(),
+                }
+                df = pd.DataFrame(table)
+                wandb.log({"completions": wandb.Table(dataframe=df)})
+
