@@ -86,7 +86,7 @@ def preprocess_dataset(dataset_name: str = "gsm8k",
         return dataset
     elif dataset_name == "triviaqa":
         # load_dataset("mandarjoshi/trivia_qa", "rc", split="train")
-        dataset: Dataset = load_dataset("mandarjoshi/trivia_qa", "rc", split="train") # type: ignore
+        dataset: Dataset = load_dataset("mandarjoshi/trivia_qa", "rc")[split] # type: ignore
         
         def format_triviaqa_question(example):
             question_text = example['question']
