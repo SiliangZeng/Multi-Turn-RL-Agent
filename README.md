@@ -11,7 +11,7 @@ Install Python environment
 conda create -n verifier_env python=3.11 -y
 source activate verifier_env
 
-pip install -r requirements.txt
+pip install -e .
 pip install flash-attn --no-build-isolation
 ```
 
