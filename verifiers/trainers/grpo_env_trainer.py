@@ -87,6 +87,11 @@ class GRPOEnvTrainer(GRPOTrainer):
             **kwargs,
         )
         self.env = env
+        
+        # for evaluation
+        if self.eval_dataset is not None:
+            self.num_generations = 1
+            self.all_rewards = []
 
     def _generate_and_score_completions(
          self, inputs: Dict[str, Union[torch.Tensor, Any]]   
@@ -299,3 +304,132 @@ class GRPOEnvTrainer(GRPOTrainer):
                 df = pd.DataFrame(table)
                 wandb.log({"completions": wandb.Table(dataframe=df)})
 
+    # adopted from GRPOTrainer
+    def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
+        mode = "eval" if self.control.should_evaluate else "train"
+        if mode == "train":
+            if self.state.global_step % self.num_iterations == 0:
+                inputs = self._generate_and_score_completions(inputs)
+                self._buffered_inputs[self._step % self.args.gradient_accumulation_steps] = inputs
+            else:
+                inputs = self._buffered_inputs[self._step % self.args.gradient_accumulation_steps]
+            self._step += 1
+        else:
+            # In evaluation, we don't reuse completions across multiple updates, so we don't need to buffer inputs.
+            inputs = self._generate_and_score_completions_eval(inputs)
+        return inputs
+    
+    def _generate_and_score_completions_eval(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
+        device = self.accelerator.device
+
+        prompts = [x["prompt"] for x in inputs]
+        prompt_ids, prompt_mask = self._prepare_prompt_inputs(inputs)
+        
+        if self.state.global_step != self._last_loaded_step:
+            self._move_model_to_vllm()
+            self._last_loaded_step = self.state.global_step
+            
+        all_prompts = gather_object(prompts)
+
+        if self.accelerator.is_main_process:
+            env_result = self.env.generate(
+                prompts=all_prompts,
+                llm=self.llm,
+                sampling_params=self.sampling_params,
+            )
+            completion_ids = env_result['ids']
+            completion_messages = env_result['messages']
+            completion_mask = env_result['mask']
+        else:
+            completion_ids = [None] * len(all_prompts)
+            completion_messages = [None] * len(all_prompts)
+            completion_mask = [None] * len(all_prompts)
+
+        completion_ids = broadcast_object_list(completion_ids, from_process=0)
+        completion_messages = broadcast_object_list(completion_messages, from_process=0)
+        completion_mask = broadcast_object_list(completion_mask, from_process=0)
+
+        process_slice = slice(
+            self.accelerator.process_index * len(prompts),
+            (self.accelerator.process_index + 1) * len(prompts),
+        )
+
+        completion_ids = completion_ids[process_slice]
+        completion_messages = completion_messages[process_slice]
+        completion_mask = completion_mask[process_slice]
+        
+        device = self.accelerator.device
+        completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
+        completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
+
+        completion_mask = [torch.tensor(mask, device=device) for mask in completion_mask]
+        completion_mask = pad(completion_mask, padding_value=0)
+
+        prompt_completion_ids, attention_mask, logits_to_keep = self._prepare_model_inputs(
+            prompt_ids, prompt_mask, completion_ids, completion_mask
+        )
+        
+        old_per_token_logps, ref_per_token_logps = self._compute_logps(
+            prompt_completion_ids, attention_mask, logits_to_keep
+        )
+
+        turn_rewards_per_func = self._calculate_rewards(
+            prompts, completion_messages, self.turn_reward_funcs, inputs
+        )
+        outcome_rewards_per_func = self._calculate_rewards(
+            prompts, completion_messages, self.outcome_reward_funcs, inputs
+        )
+        combined_rewards_per_func = self._calculate_rewards(
+            prompts, completion_messages, self.combined_reward_funcs, inputs
+        )
+        
+        print(f"Current rewards shape: {combined_rewards_per_func.shape}")
+        self.all_rewards.append(combined_rewards_per_func)
+        current_rewards = torch.cat(self.all_rewards, dim=0)
+        print(f"Current all rewards shape: {current_rewards.shape}")
+        print(f"Current all rewards mean: {current_rewards.mean(dim=0)}")
+
+        turn_rewards = (turn_rewards_per_func * self.turn_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
+        outcome_rewards = (outcome_rewards_per_func * self.outcome_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
+        combined_rewards = (combined_rewards_per_func * self.combined_reward_weights.to(device).unsqueeze(0)).sum(dim=1)
+
+        turn_mean_grouped_rewards, turn_std_grouped_rewards, turn_advantages = self._compute_normalized_advantages(turn_rewards, len(prompts))
+        outcome_mean_grouped_rewards, outcome_std_grouped_rewards, outcome_advantages = self._compute_normalized_advantages(outcome_rewards, len(prompts))
+        combined_mean_grouped_rewards, combined_std_grouped_rewards, combined_advantages = self._compute_normalized_advantages(combined_rewards, len(prompts))
+        
+        advantages = outcome_advantages if self.no_turn_reward else combined_advantages
+
+        mode = "eval" if self.control.should_evaluate else "train"
+
+        completion_length = self.accelerator.gather_for_metrics(completion_mask.sum(1)).float().mean().item()
+        self._metrics[mode]["completion_length"].append(completion_length)
+
+        turn_rewards_per_func = turn_rewards_per_func.mean(dim=0)
+        for i, reward_func in enumerate(self.turn_reward_funcs):
+            reward_func_name = reward_func.__name__
+            self._metrics[mode][f"rewards/turn/{reward_func_name}"].append(turn_rewards_per_func[i].item())
+            
+        outcome_rewards_per_func = outcome_rewards_per_func.mean(dim=0)
+        for i, reward_func in enumerate(self.outcome_reward_funcs):
+            reward_func_name = reward_func.__name__
+            self._metrics[mode][f"rewards/outcome/{reward_func_name}"].append(outcome_rewards_per_func[i].item())
+
+        self._metrics[mode]["reward/turn"].append(turn_rewards.mean().item())
+        self._metrics[mode]["reward/outcome"].append(outcome_rewards.mean().item())
+        self._metrics[mode]["reward/combined"].append(combined_rewards.mean().item())
+        self._metrics[mode]["reward_std/turn"].append(turn_std_grouped_rewards.mean().item())
+        self._metrics[mode]["reward_std/outcome"].append(outcome_std_grouped_rewards.mean().item())
+        self._metrics[mode]["reward_std/combined"].append(combined_std_grouped_rewards.mean().item())
+
+        if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
+            self._log_completion_samples(prompts, completion_messages, combined_rewards)
+
+        return {
+            "prompt_ids": prompt_ids,
+            "prompt_mask": prompt_mask,
+            "completion_ids": completion_ids,
+            "completion_mask": completion_mask,
+            "old_per_token_logps": old_per_token_logps,
+            "ref_per_token_logps": ref_per_token_logps,
+            "advantages": advantages,
+        }
