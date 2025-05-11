@@ -118,7 +118,7 @@ class ToolEnv(MultiTurnEnv):
         if self.eval_dataset is None:
             self.eval_dataset = preprocess_dataset(
                 dataset_name=self.dataset_name,
-                split="test",
+                split="validation",
                 system_prompt=self.system_prompt,
                 few_shot=self.few_shot
             )

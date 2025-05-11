@@ -145,6 +145,70 @@ class MultiTurnEnv(Environment):
         }
         return output
 
+    def step_only_msg(self,
+            states: List[Dict[str, Any]],
+            llm: LLM,
+            sampling_params: SamplingParams) -> List[Dict[str, Any]]:
+
+        live_indices = [i for i, s in enumerate(states) if not s["completed"]]
+        messages_to_step = [states[i]["messages"] for i in live_indices]
+        llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False)  # type: ignore
+
+        def update_state(j, llm_response):
+            # sleep to avoid rate limiting
+            time.sleep(self.sleep_time * random.random())
+
+            state = states[j].copy()
+            state["messages"].append({"role": "assistant", "content": llm_response.outputs[0].text})
+
+            if self.is_completed(state["messages"]):
+                state["completed"] = True
+            else:
+                state["messages"].append(self.env_response(state["messages"]))
+
+            return j, state
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            results = list(executor.map(
+                lambda args: update_state(*args),
+                [(j, llm_responses[i]) for i, j in enumerate(live_indices)]
+            ))
+
+        for j, state in results:
+            states[j] = state
+
+        return states
+
+
+    def generate_only_msg(self, prompts: List[List[Dict[str, Any]]],
+                llm: LLM,
+                sampling_params: SamplingParams,
+                **kwargs: Any) -> Dict[str, List[List[Dict[str, Any]]]]:
+
+        custom_sp = sampling_params.clone()
+        for k, v in self.sampling_args.items():
+            setattr(custom_sp, k, v)
+
+        # initialize state variables
+        all_completed = False
+        states = [{
+            "messages": m,
+            "prompt_messages": len(m),
+            "completed": False
+        } for m in prompts]
+
+        # main loop
+        while not all_completed:
+            states = self.step_only_msg(states, llm, custom_sp)
+            all_completed = all(state["completed"] for state in states)
+
+        completion_messages = [s["messages"][s["prompt_messages"]:] for s in states]
+        output = {
+            "messages": completion_messages
+        }
+        return output
+
+
     def step_api(self, 
              client: Any,
              model: str,

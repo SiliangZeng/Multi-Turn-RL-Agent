@@ -56,7 +56,7 @@ if args.trainer == "mt_grpo":
         run_name = f"{args.trainer}-{args.advantage_est}-discount-factor-{args.discount_factor}-4-outcome-reward-2-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
 elif args.trainer == "grpo":
     if args.no_turn_reward:
-        run_name = f"{args.trainer}-4-outcome-reward-no-turn-reward--max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
+        run_name = f"{args.trainer}-4-outcome-reward-no-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
     else:
         run_name = f"{args.trainer}-4-outcome-reward-2-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
 
