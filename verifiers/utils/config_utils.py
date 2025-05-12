@@ -1,11 +1,16 @@
 from trl import GRPOConfig
 from typing import List, Optional
 
-def get_default_grpo_config(run_name: str,
-                            num_gpus: int = 1,
-                            reward_weights: Optional[List[float]] = None) -> GRPOConfig:
+
+def get_default_grpo_config(
+    num_gpus: int = 1,
+    run_name: Optional[str] = None,
+    reward_weights: Optional[List[float]] = None,
+) -> GRPOConfig:
+
+    output_dir = f"outputs/{run_name}" if run_name else ""
     return GRPOConfig(
-        output_dir=f"outputs/{run_name}",
+        output_dir=output_dir,
         run_name=run_name,
         learning_rate=1e-6,
         lr_scheduler_type="constant_with_warmup",
@@ -33,7 +38,5 @@ def get_default_grpo_config(run_name: str,
         log_on_each_node=False,
         log_completions=True,
         report_to="wandb",
-        reward_weights=reward_weights
+        reward_weights=reward_weights,
     )
-
-

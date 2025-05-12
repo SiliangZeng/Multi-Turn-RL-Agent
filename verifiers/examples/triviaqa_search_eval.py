@@ -52,7 +52,6 @@ outcome_reward_funcs = [
 
 
 training_args = vf.get_default_grpo_config(
-    run_name=None,
     num_gpus=2,
 )
 training_args.report_to = "none"
