@@ -21,10 +21,16 @@ parser.add_argument(
     default=64,
     help="Batch size for evaluation (default: 1)",
 )
+parser.add_argument(
+    "--subfolder",
+    type=str,
+    default="checkpoint-300",
+    help="Subfolder of the model to use (default: checkpoint-300)",
+)
 args = parser.parse_args()
 
 model_name = args.model_name
-model, tokenizer = vf.get_model_and_tokenizer(model_name)
+model, tokenizer = vf.get_model_and_tokenizer(model_name, subfolder=subfolder)
 
 vf_env = vf.ToolEnv(
     dataset="triviaqa",
