@@ -8,7 +8,7 @@ def get_default_grpo_config(
     reward_weights: Optional[List[float]] = None,
 ) -> GRPOConfig:
 
-    output_dir = f"outputs/{run_name}" if run_name else ""
+    output_dir = f"outputs/{run_name}" if run_name else None
     return GRPOConfig(
         output_dir=output_dir,
         run_name=run_name,
