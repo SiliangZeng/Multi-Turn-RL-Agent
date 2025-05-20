@@ -79,8 +79,7 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --max_steps 300 \
     --beta 0 \
     --trainer "mt_grpo" \
-    --advantage_est "aae" \
-    --step_advantage_coef 1 \
+    --turn_advantage_coef 1 \
 ```
 
 Run GRPO-OR
@@ -98,7 +97,7 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --max_steps 300 \
     --beta 0 \
     --trainer "grpo" \
-    --no_step_reward \
+    --no_turn_reward \
 ```
 
 Run GRPO-MR
