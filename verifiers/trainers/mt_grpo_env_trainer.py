@@ -65,11 +65,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             **kwargs,
         )
         self.env = env
-        if advantage_est not in ["aae", "cae"]:
-            raise ValueError(f"Invalid advantage_est: {advantage_est}. Expected 'aae' or 'cae'.")
-        self.advantage_est = advantage_est
         self.turn_advantage_coef = turn_advantage_coef
-        self.discount_factor = discount_factor
 
     def _generate_and_score_completions(
          self, inputs: Dict[str, Union[torch.Tensor, Any]]   
@@ -113,12 +109,9 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
         combined_mean_grouped_rewards, combined_std_grouped_rewards, combined_advantages = self._compute_normalized_advantages(combined_rewards, len(prompts))
 
         result_segment_indices = self._find_result_positions(completion_ids, completion_messages)
- 
 
-        cumulative_rewards = turn_rewards + self.discount_factor * outcome_rewards
-        cumulative_mean_grouped_rewards, cumulative_std_grouped_rewards, cumulative_advantages = self._compute_normalized_advantages(cumulative_rewards, len(prompts))
         advantages = self._assign_advantages(
-            completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, result_segment_indices
+            completion_mask, turn_advantages, outcome_advantages, combined_advantages, result_segment_indices
         )
         
 
@@ -178,7 +171,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             
         return result_segment_indices
     
-    def _assign_advantages(self, completion_mask, turn_advantages, outcome_advantages, combined_advantages, cumulative_advantages, result_segment_indices):
+    def _assign_advantages(self, completion_mask, turn_advantages, outcome_advantages, combined_advantages, result_segment_indices):
         device = self.accelerator.device
         batch_size, seq_len = completion_mask.shape
         assigned_advantages = torch.zeros_like(completion_mask, dtype=torch.float32)
@@ -197,45 +190,25 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
             
             outcome_adv  = outcome_advantages[i]
             turn_adv = turn_advantages[i]
-            combined_adv = combined_advantages[i]
-            cumulative_adv = cumulative_advantages[i]     
-                
+            combined_adv = combined_advantages[i]        
 
             outcome_adv_expanded = outcome_adv * torch.ones_like(mask_row, dtype=torch.float32)
             turn_adv_expanded = turn_adv * torch.ones_like(mask_row, dtype=torch.float32)
             combined_adv_expanded = combined_adv * torch.ones_like(mask_row, dtype=torch.float32)
-            cumulative_adv_expanded = cumulative_adv * torch.ones_like(mask_row, dtype=torch.float32)
 
-            if self.advantage_est == "aae":
-
-                if result_segment > 0:
-                    segment_boundaries = get_segment_boundaries(mask_row)
-                    if result_segment < len(segment_boundaries):
-                        split_point = segment_boundaries[result_segment]
-                        before_result_mask = (torch.arange(seq_len, device=device) < split_point).float() * mask_row
-                        assigned_advantages[i] = outcome_adv_expanded + self.turn_advantage_coef * turn_adv_expanded * before_result_mask
-                    else:
-                        raise ValueError(f"Not enough segments found in completion {i}")
+            if result_segment > 0:
+                segment_boundaries = get_segment_boundaries(mask_row)
+                if result_segment < len(segment_boundaries):
+                    split_point = segment_boundaries[result_segment]
+                    before_result_mask = (torch.arange(seq_len, device=device) < split_point).float() * mask_row
+                    assigned_advantages[i] = outcome_adv_expanded + self.turn_advantage_coef * turn_adv_expanded * before_result_mask
                 else:
-                    assigned_advantages[i] = combined_adv_expanded
-
-            elif self.advantage_est == "cae":
-
-                if result_segment > 0:
-                    segment_boundaries = get_segment_boundaries(mask_row)
-                    if result_segment < len(segment_boundaries):
-                        split_point = segment_boundaries[result_segment]
-                        before_result_mask = (torch.arange(seq_len, device=device) < split_point).float()
-                        after_result_mask = 1.0 - before_result_mask
-                        assigned_advantages[i] = cumulative_adv_expanded * before_result_mask + outcome_adv_expanded * after_result_mask
-                    else:
-                        raise ValueError(f"Not enough segments found in completion {i}")
-                else:
-                    assigned_advantages[i] = cumulative_adv_expanded
+                    raise ValueError(f"Not enough segments found in completion {i}")
+            else:
+                assigned_advantages[i] = combined_adv_expanded
 
         return assigned_advantages
 
-    
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         if return_outputs:
             raise ValueError("The GRPOTrainer does not support returning outputs")

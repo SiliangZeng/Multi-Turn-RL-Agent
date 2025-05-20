@@ -1,6 +1,10 @@
 # Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment
 
-This repository contains the code in our work: ["Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment"]()
+<a href="https://arxiv.org/abs/2505.11821">
+  <img src="https://img.shields.io/static/v1?label=arXiv&message=2505.11821&color=b31b1b" />
+</a>
+
+This repository contains the code in our work: ["Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment"](https://arxiv.org/abs/2505.11821)
 
 ![](./assets/rl_agent.png)
 
@@ -40,36 +44,29 @@ Search Tool: `verifiers/tools/local_wiki_search.py`
 
 System Prompt: `verifiers/prompts/system_prompts.py`
 
-Reward Functions `verifiers/rubric/triviaqa_rubric.py`
+Reward Functions: `verifiers/rubric/triviaqa_rubric.py`
 - Turn-Level Rewards:
-    - `tool_execution_reward_func`
-    - `exist_answer_in_search_results`
+    - tool execution: `tool_execution_reward_func`
+    - search result answer presence: `exist_answer_in_search_results`
 - Outcome Rewards:
-    - `exist_answer_reward_func`
-    - `exact_match_reward_func`
-    - `parser.get_format_reward_func`
-    - `parser.get_xml_reward_func`
+    - final anwer presence: `exist_answer_reward_func`
+    - exact match: `exact_match_reward_func`
+    - xml format: `parser.get_format_reward_func`
+    - xml tage usage: `parser.get_xml_reward_func`
 
 Trainers:
 - GRPO: original GRPO with trajectory-level advantage estimation 
-    - GRPO-OR: GRPO using only outcome rewards
-    - GRPO-MR: GRPO using merged outcome and turn-level rewards 
-- Multi-Turn GRPO: proposed multi-turn GRPO with turn-level advantage estimation 
-    - MT-GRPO + AAE: multi-turn GRPO with turn-level additive advantage estimation 
-    - MT-GRPO + CAE: multi-turn GRPO with turn-level cumulative-reward-induced advantage estimation 
+    - **GRPO-OR**: GRPO using only outcome rewards
+    - **GRPO-MR**: GRPO using merged outcome and turn-level rewards 
+- **MT-GRPO**: GPRO variant with turn-level advantage estimation using both outcome and
+turn-level rewards
 
-| **Trainer**      | **Reward Type**                             | **Advantage Estimation Method**                                       |
-|------------------|---------------------------------------------|-----------------------------------------------------------------------|
-| **GRPO-OR**      | **O**utcome **R**ewards                     | Trajectory-Level Advantage Estimation                                 |
-| **GRPO-MR**      | **M**erged Outcome + Turn-Level **R**ewards | Trajectory-Level Advantage Estimation                                 |
-| **MT-GRPO + AAE**  | Outcome + Turn-Level Rewards                | Turn-Level **A**dditive **A**dvantage **E**stimation                  |
-| **MT-GRPO + CAE**  | Outcome + Turn-Level Rewards                | Turn-Level **C**umulative-Reward-Induced **A**dvantage **E**stimation |
 
 ## Usage
 
-Run MT-GRPO + AAE
+Run MT-GRPO
 ```bash
-# bash scripts/run_mt_grpo_aae.sh
+# bash scripts/run_mt_grpo.sh
 accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     verifiers/examples/triviaqa_search.py \
     --model_name "Qwen/Qwen2.5-7B" \
@@ -84,25 +81,6 @@ accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
     --trainer "mt_grpo" \
     --advantage_est "aae" \
     --step_advantage_coef 1 \
-```
-
-Run MT-GRPO + CAE
-```bash
-# bash scripts/run_mt_grpo_cae.sh
-accelerate launch --config-file configs/zero3.yaml --num-processes 7 \
-    verifiers/examples/triviaqa_search.py \
-    --model_name "Qwen/Qwen2.5-7B" \
-    --num_gpus 8 \
-    --learning_rate 1e-6 \
-    --num_generations 21 \
-    --per_device_train_batch_size 12 \
-    --grad_accum_steps 4 \
-    --num_iterations 2 \
-    --max_steps 300 \
-    --beta 0 \
-    --trainer "mt_grpo" \
-    --advantage_est "cae" \
-    --discount_factor 1 \
 ```
 
 Run GRPO-OR
@@ -148,5 +126,10 @@ Our code implementation is built upon the open-source project [verifiers](https:
 
 If you find our work useful in your research please consider citing our paper:
 ```
-
+@article{zeng2025reinforcing,
+  title={Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Credit Assignment},
+  author={Zeng, Siliang and Wei, Quan and Brown, William and Frunza, Oana and Nevmyvaka, Yuriy and Hong, Mingyi},
+  journal={arXiv preprint arXiv:2505.11821},
+  year={2025}
+}
 ```

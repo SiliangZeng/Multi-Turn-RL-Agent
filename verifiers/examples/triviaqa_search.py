@@ -18,9 +18,7 @@ parser.add_argument('--max_steps', type=int, default=200, help='Maximum number o
 parser.add_argument('--beta', type=float, default=0.01, help='Beta parameter for KL divergence (default: 0.01)')
 parser.add_argument('--trainer', type=str, default="mt_grpo", choices=["mt_grpo", "grpo"], help='Trainer type (default: mt_grpo)')
 parser.add_argument('--no_turn_reward', action="store_true", help='Use turn reward (default: True)')
-parser.add_argument('--advantage_est', type=str, default="aae", choices=["aae", "cae"], help='Advantage estimation method (default: aae)')
 parser.add_argument('--turn_advantage_coef', type=float, default=1.0, help='Coefficient for turn-level advantage (default: 1.0)')
-parser.add_argument('--discount_factor', type=float, default=1.0, help='Discount factor for outcome rewards (default: 1.0)')
 args = parser.parse_args()
 
 model_name = args.model_name
@@ -50,10 +48,8 @@ outcome_reward_funcs = [
 ]
 
 if args.trainer == "mt_grpo":
-    if args.advantage_est == "aae":
-        run_name = f"{args.trainer}-{args.advantage_est}-coef-{args.turn_advantage_coef}-4-outcome-reward-2-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
-    else:
-        run_name = f"{args.trainer}-{args.advantage_est}-discount-factor-{args.discount_factor}-4-outcome-reward-2-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
+    run_name = f"{args.trainer}-coef-{args.turn_advantage_coef}-4-outcome-reward-2-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
+
 elif args.trainer == "grpo":
     if args.no_turn_reward:
         run_name = f"{args.trainer}-4-outcome-reward-no-turn-reward-max-steps-{args.max_steps}-{model_name.split('/')[-1].lower()}"
@@ -71,7 +67,6 @@ training_args.gradient_accumulation_steps = args.grad_accum_steps
 training_args.num_iterations = args.num_iterations
 training_args.max_steps = args.max_steps
 training_args.beta = args.beta
-# training_args.report_to = "none"
 
 print(f"Training configuration:")
 print(f"  Learning rate: {training_args.learning_rate}")
@@ -86,7 +81,7 @@ print(f"  Trainer: {args.trainer}")
 print(f"  No turn reward: {args.no_turn_reward}")
 print(f"  Advantage estimation method: {args.advantage_est}")
 print(f"  Turn advantage coefficient: {args.turn_advantage_coef}")
-print(f"  Discount factor: {args.discount_factor}")
+
 
 if args.trainer == "mt_grpo":
     trainer = vf.MTGRPOEnvTrainer(
@@ -95,11 +90,10 @@ if args.trainer == "mt_grpo":
         env=vf_env,
         turn_reward_funcs=turn_reward_funcs,
         outcome_reward_funcs=outcome_reward_funcs,
-        advantage_est=args.advantage_est,
         turn_advantage_coef=args.turn_advantage_coef,
         discount_factor=args.discount_factor,
         args=training_args,
-        train_dataset=train_dataset
+        train_dataset=train_dataset,
     )
 elif args.trainer == "grpo":
     trainer = vf.GRPOEnvTrainer(
@@ -110,6 +104,6 @@ elif args.trainer == "grpo":
         outcome_reward_funcs=outcome_reward_funcs,
         no_turn_reward=args.no_turn_reward,
         args=training_args,
-        train_dataset=train_dataset
+        train_dataset=train_dataset,
     )
 trainer.train()
