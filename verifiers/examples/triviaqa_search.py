@@ -79,7 +79,6 @@ print(f"  Max steps: {training_args.max_steps}")
 print(f"  Beta: {training_args.beta}")
 print(f"  Trainer: {args.trainer}")
 print(f"  No turn reward: {args.no_turn_reward}")
-print(f"  Advantage estimation method: {args.advantage_est}")
 print(f"  Turn advantage coefficient: {args.turn_advantage_coef}")
 
 
@@ -91,7 +90,6 @@ if args.trainer == "mt_grpo":
         turn_reward_funcs=turn_reward_funcs,
         outcome_reward_funcs=outcome_reward_funcs,
         turn_advantage_coef=args.turn_advantage_coef,
-        discount_factor=args.discount_factor,
         args=training_args,
         train_dataset=train_dataset,
     )
