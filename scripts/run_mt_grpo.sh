@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export WANDB_API_KEY=
+export WANDB_ENTITY=
+export WANDB_PROJECT=
+
 # Activate the environment
 source activate verifier_env
 
