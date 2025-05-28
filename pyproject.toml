@@ -14,6 +14,7 @@ requires-python = ">=3.11"
 
 dependencies = [
   "torch==2.5.1",
+  "transformers==4.49.0",
   "deepspeed",
   "accelerate",
   "peft",
