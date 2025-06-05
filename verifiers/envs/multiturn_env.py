@@ -124,7 +124,6 @@ class MultiTurnEnv(Environment):
                  sampling_params: SamplingParams | GenerationConfig,
                  **kwargs: Any) -> Dict[str, List[Sequence[int]] | List[str] |  List[List[Dict[str, Any]]]]:
 
-        # TODO: Use generic SP or just pass as is to hf model
         if isinstance(sampling_params, GenerationConfig):
             custom_sp = sampling_params
         elif isinstance(sampling_params, SamplingParams):
