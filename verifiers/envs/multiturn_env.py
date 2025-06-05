@@ -2,8 +2,9 @@ from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 import random
 import time
-from typing import List, Dict, Sequence, Any, Union, Tuple
+from typing import List, Dict, Sequence, Any, Tuple
 
+from transformers import GenerationConfig
 from datasets import Dataset
 from trl.trainer.grpo_trainer import RewardFunc
 from ..imports import LLM, SamplingParams  # type: ignore
@@ -59,7 +60,8 @@ class MultiTurnEnv(Environment):
         
         live_indices = [i for i, s in enumerate(states) if not s["completed"]]
         messages_to_step = [states[i]["messages"] for i in live_indices]
-        llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False) # type: ignore
+
+        llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False)
 
         #for i, j in enumerate(live_indices):
         def update_state(j, llm_response):
@@ -85,9 +87,15 @@ class MultiTurnEnv(Environment):
             state["completion_ids"].extend(list(llm_response.outputs[0].token_ids))
             state["completion_ids"] = state["completion_ids"][len(state["prompt_ids"]):]
 
-            if self.is_completed(state["messages"]) or len(state["completion_ids"]) > sampling_params.max_tokens: # type: ignore
+            # handle vLLM or local llm SP
+            max_tokens = (
+                getattr(sampling_params, 'max_new_tokens', None)
+                or getattr(sampling_params, 'max_tokens', None)
+            )
+
+            if self.is_completed(state["messages"]) or len(state["completion_ids"]) > max_tokens: # type: ignore
                 state["completed"] = True
-                state["completion_ids"] = state["completion_ids"][:sampling_params.max_tokens]
+                state["completion_ids"] = state["completion_ids"][:max_tokens]
                 state["completion_mask"] = state["completion_mask"][:len(state["completion_ids"])]
             else:
                 state["messages"].append(self.env_response(state["messages"]))
@@ -113,11 +121,18 @@ class MultiTurnEnv(Environment):
 
     def generate(self, prompts: List[List[Dict[str, Any]]],
                  llm: LLM,
-                 sampling_params: SamplingParams,
+                 sampling_params: SamplingParams | GenerationConfig,
                  **kwargs: Any) -> Dict[str, List[Sequence[int]] | List[str] |  List[List[Dict[str, Any]]]]:
-        custom_sp = sampling_params.clone()
-        for k, v in self.sampling_args.items():
-            setattr(custom_sp, k, v)
+
+        # TODO: Use generic SP or just pass as is to hf model
+        if isinstance(sampling_params, GenerationConfig):
+            custom_sp = sampling_params
+        elif isinstance(sampling_params, SamplingParams):
+            custom_sp = sampling_params.clone()
+            for k, v in self.sampling_args.items():
+                setattr(custom_sp, k, v)
+        else:
+            raise TypeError(f"Unsupported sampling_params type: {type(sampling_params)}")
 
         # initialize state variables
         all_completed = False
