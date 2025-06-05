@@ -1,5 +1,6 @@
 from typing import Callable, Optional, Union, Any, List, Dict, Tuple
 
+from dataclasses import dataclass
 from accelerate.utils import broadcast_object_list, gather, gather_object
 from datasets import Dataset, IterableDataset
 import torch
@@ -16,6 +17,8 @@ from trl import GRPOTrainer, GRPOConfig
 from trl.data_utils import apply_chat_template, maybe_apply_chat_template
 from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
+from trl.models import unwrap_model_for_generation
+
 
 from verifiers.envs.environment import Environment
 from verifiers.utils.logging_utils import print_prompt_completions_sample
@@ -27,6 +30,80 @@ if is_wandb_available():
     import wandb
 
 RewardFunc = Union[str, PreTrainedModel, Callable[[List, List], List[float]]]
+
+@dataclass
+class ModelOutput:
+    text: str
+    token_ids: List[int]
+
+@dataclass
+class LocalResponse:
+    """Compliant with vLLM's response format."""
+    prompt_token_ids: List[int]
+    outputs: List[ModelOutput]
+
+class LocalLLM:
+
+    def __init__(self, model_wrapped, processing_class, generation_config, accelerator):
+        self.model_wrapped = model_wrapped
+        self.processing_class = processing_class
+        self.accelerator = accelerator
+
+    def chat(self, messages_batch, sampling_params, use_tqdm = True):
+        """
+        Generate responses using local model.
+        """
+
+        device = self.accelerator.device
+
+        all_inputs = []
+        for messages in messages_batch:
+            text = self.processing_class.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            tokens = self.processing_class(text, return_tensors="pt")
+            all_inputs.append(tokens.input_ids)
+
+        max_len = max(ids.size(1) for ids in all_inputs)
+        prompt_ids = torch.zeros((len(all_inputs), max_len), dtype=all_inputs[0].dtype, device=device)
+        prompt_mask = torch.zeros((len(all_inputs), max_len), dtype=torch.long, device=device)
+
+        for i, ids in enumerate(all_inputs):
+            prompt_ids[i, -ids.size(1):] = ids.squeeze(0)
+            prompt_mask[i, -ids.size(1):] = 1
+
+        with unwrap_model_for_generation(
+            self.model_wrapped, self.accelerator
+        ) as unwrapped_model:
+            prompt_completion_ids = unwrapped_model.generate(
+                prompt_ids,
+                attention_mask=prompt_mask,
+                generation_config=sampling_params,
+            )
+
+        # Extract completions and handle EOS
+        prompt_length = prompt_ids.size(1)
+        completion_ids = prompt_completion_ids[:, prompt_length:]
+
+        is_eos = completion_ids == self.processing_class.eos_token_id
+        eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
+        eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
+        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
+        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+
+        responses = []
+        for i in range(completion_ids.size(0)):
+            valid_tokens = completion_ids[i][completion_mask[i].bool()]
+            completion_text = self.processing_class.decode(valid_tokens, skip_special_tokens=True)
+
+            response = LocalResponse(
+                prompt_token_ids=prompt_completion_ids[i, :prompt_length].tolist(),
+                outputs=[ModelOutput(text=completion_text, token_ids=valid_tokens.tolist())]
+            )
+
+            responses.append(response)
+
+        return responses
 
 class GRPOEnvTrainer(GRPOTrainer):
     def __init__(
@@ -47,8 +124,6 @@ class GRPOEnvTrainer(GRPOTrainer):
             peft_config: Optional["PeftConfig"] = None,
             **kwargs,
     ):
-        if not args.use_vllm:
-            raise ValueError("vLLM must be enabled for GRPOEnvTrainer")
         if not (callable(turn_reward_funcs) or (isinstance(turn_reward_funcs, list) and all(callable(f) for f in turn_reward_funcs))):
             raise ValueError("turn_reward_funcs must be a function or a list of functions.")
         if not (callable(outcome_reward_funcs) or (isinstance(outcome_reward_funcs, list) and all(callable(f) for f in outcome_reward_funcs))):
@@ -95,11 +170,6 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         prompts = [x["prompt"] for x in inputs]
         prompt_ids, prompt_mask = self._prepare_prompt_inputs(inputs)
-         
-        if self.state.global_step != self._last_loaded_step:
-            self._move_model_to_vllm()
-            self._last_loaded_step = self.state.global_step
-            
         completion_ids, completion_messages, completion_mask = self._generate_completions(prompts)
 
         prompt_completion_ids, attention_mask, logits_to_keep = self._prepare_model_inputs(
@@ -180,16 +250,35 @@ class GRPOEnvTrainer(GRPOTrainer):
         return prompt_ids, prompt_mask
     
     def _generate_completions(self, prompts):
+
+        device = self.accelerator.device
+
+        if self.args.use_vllm:
+            if self.state.global_step != self._last_loaded_step:
+                self._move_model_to_vllm()
+                self._last_loaded_step = self.state.global_step
+            llm, sampling_params = self.llm, self.sampling_params
+        else:
+            llm, sampling_params = (
+                LocalLLM(
+                    model_wrapped=self.model_wrapped,
+                    processing_class=self.processing_class,
+                    generation_config=self.generation_config,
+                    accelerator=self.accelerator
+                ),
+                self.generation_config
+            )
+
         all_prompts = gather_object(prompts)
         if self.accelerator.is_main_process:
             env_result = self.env.generate(
                 prompts=all_prompts,
-                llm=self.llm,
-                sampling_params=self.sampling_params,
+                llm=llm,
+                sampling_params=sampling_params,
             )
-            completion_ids = env_result['ids']
-            completion_messages = env_result['messages']
-            completion_mask = env_result['mask']
+            completion_ids = env_result["ids"]
+            completion_messages = env_result["messages"]
+            completion_mask = env_result["mask"]
         else:
             completion_ids = [None] * len(all_prompts)
             completion_messages = [None] * len(all_prompts)
@@ -207,16 +296,14 @@ class GRPOEnvTrainer(GRPOTrainer):
         completion_ids = completion_ids[process_slice]
         completion_messages = completion_messages[process_slice]
         completion_mask = completion_mask[process_slice]
-        
         device = self.accelerator.device
         completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
         completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
 
         completion_mask = [torch.tensor(mask, device=device) for mask in completion_mask]
         completion_mask = pad(completion_mask, padding_value=0)
-        
         return completion_ids, completion_messages, completion_mask
-    
+
     def _prepare_model_inputs(self, prompt_ids, prompt_mask, completion_ids, completion_mask):
         prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
