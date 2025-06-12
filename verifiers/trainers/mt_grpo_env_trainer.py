@@ -64,6 +64,7 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
         )
         self.env = env
         self.turn_advantage_coef = turn_advantage_coef
+        self.epsilon = args.epsilon
 
     def _generate_and_score_completions(
          self, inputs: Dict[str, Union[torch.Tensor, Any]]   
@@ -72,10 +73,6 @@ class MTGRPOEnvTrainer(GRPOEnvTrainer):
         
         prompts = [x["prompt"] for x in inputs]
         prompt_ids, prompt_mask = self._prepare_prompt_inputs(inputs)
-         
-        if self.state.global_step != self._last_loaded_step:
-            self._move_model_to_vllm()
-            self._last_loaded_step = self.state.global_step
             
         completion_ids, completion_messages, completion_mask = self._generate_completions(prompts)
 

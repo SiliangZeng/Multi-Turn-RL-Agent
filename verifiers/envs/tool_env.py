@@ -82,7 +82,8 @@ class ToolEnv(MultiTurnEnv):
                      "include_stop_str_in_output": True
                  },
                  mask_env_response: bool = True,
-                 max_steps: int = 10, **kwargs):
+                 max_steps: int = 10,
+                 increment_step_from_tools_only: bool = True, **kwargs):
         # Infer schemas from tool functions
         self.tool_schemas = [infer_schema_from_function(tool) for tool in tools]
         self.tools = {tool.__name__: tool for tool in tools}
@@ -110,6 +111,8 @@ class ToolEnv(MultiTurnEnv):
         self.rubric = ToolRubric()
         self.llm_parser = XMLParser(fields=["reasoning", ("tool", "answer")])
         self.env_parser = XMLParser(fields=["result"])
+
+        self.increment_step_from_tools_only = increment_step_from_tools_only
 
     def get_dataset(self, **kwargs: Any) -> Dataset:
         return self.dataset
@@ -145,8 +148,11 @@ class ToolEnv(MultiTurnEnv):
         for message in messages[conversation_start:]:
             if message.get("role") == "assistant":
                 try:
-                    parsed = self.llm_parser.parse(message["content"])
-                    if hasattr(parsed, 'tool') and parsed.tool is not None:
+                    if self.increment_step_from_tools_only:
+                        parsed = self.llm_parser.parse(message["content"])
+                        if hasattr(parsed, 'tool') and parsed.tool is not None:
+                            step_count += 1
+                    else:
                         step_count += 1
                 except Exception:
                     pass
