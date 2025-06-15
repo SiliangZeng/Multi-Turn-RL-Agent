@@ -81,9 +81,8 @@ class MultiTurnEnv(Environment):
             state["completion_mask"].extend([1] * new_completion_len)
 
             # update completion ids
-            state["completion_ids"] = list(llm_response.prompt_token_ids) # type: ignore
+            state["completion_ids"].extend(list(llm_response.prompt_token_ids)[total_prev_len:])
             state["completion_ids"].extend(list(llm_response.outputs[0].token_ids))
-            state["completion_ids"] = state["completion_ids"][len(state["prompt_ids"]):]
 
             if self.is_completed(state["messages"]) or len(state["completion_ids"]) > sampling_params.max_tokens: # type: ignore
                 state["completed"] = True
